@@ -93,13 +93,14 @@ function buildBody(state) {
         maxLen: TITLE_MAX,
     }));
 
-    body.appendChild(buildField({
-        label: "Описание",
-        field: "description",
-        state,
-        multiline: true,
-        maxLen: DESCRIPTION_MAX,
-    }));
+    body.appendChild(buildThumbEditor(state));
+
+    // Datalist для автокомплита папок. fetchFolderNames возвращает только реально
+    // существующие папки (те, в которых есть хотя бы одно видео), так что
+    // удаленные/пустые папки в подсказках не появляются.
+    const folderListId = `modal-folder-list-${state.videoId}`;
+    const folderDatalist = document.createElement("datalist");
+    folderDatalist.id = folderListId;
 
     body.appendChild(buildField({
         label: "Папка",
@@ -107,7 +108,21 @@ function buildBody(state) {
         state,
         maxLen: FOLDER_MAX,
         hint: "Если пусто — видео ляжет в общий список.",
+        listId: folderListId,
     }));
+    body.appendChild(folderDatalist);
+
+    // Загружаем папки асинхронно — если пользователь начнет печатать раньше,
+    // подсказки появятся как только данные придут.
+    videosApi.fetchFolderNames().then((folders) => {
+        folders.forEach((name) => {
+            const opt = document.createElement("option");
+            opt.value = name;
+            folderDatalist.appendChild(opt);
+        });
+    }).catch((err) => {
+        console.warn("Не удалось загрузить список папок:", err);
+    });
 
     body.appendChild(buildField({
         label: "Дата записи",
@@ -116,11 +131,17 @@ function buildBody(state) {
         type: "date",
     }));
 
+    body.appendChild(buildField({
+        label: "Описание",
+        field: "description",
+        state,
+        multiline: true,
+        maxLen: DESCRIPTION_MAX,
+    }));
+
     if (state.sourceUrl) {
         body.appendChild(buildSourceRow(state.sourceUrl));
     }
-
-    body.appendChild(buildThumbEditor(state));
 
     return body;
 }
@@ -148,7 +169,7 @@ function buildFooter(state, overlay) {
 
 // --- Поля ------------------------------------------------------------------
 
-function buildField({ label, field, state, required, maxLen, multiline, hint, type }) {
+function buildField({ label, field, state, required, maxLen, multiline, hint, type, listId }) {
     const wrap = document.createElement("div");
     wrap.className = "modal-field";
 
@@ -172,6 +193,7 @@ function buildField({ label, field, state, required, maxLen, multiline, hint, ty
     el.dataset.field = field;
     if (!multiline) el.type = type || "text";
     if (maxLen) el.maxLength = maxLen;
+    if (listId) el.setAttribute("list", listId);
     el.value = state.values[field] || "";
 
     const updateCounter = () => {

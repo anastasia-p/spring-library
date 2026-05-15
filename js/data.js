@@ -12,12 +12,19 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 
 import { API_BASE_URL } from "./config.js";
-import { db, getCurrentUser } from "./firebase.js";
+import { db, getCurrentUser, isAdmin } from "./firebase.js";
 
 function sortByTitle(a, b) {
     const ta = (a.title || "").trim();
     const tb = (b.title || "").trim();
     return ta.localeCompare(tb, "ru", { sensitivity: "base", numeric: true });
+}
+
+// Фильтрация скрытых: обычный пользователь не видит видео с hidden === true.
+// Админ видит все. Это UX-фильтр, не security — документы доступны через Firestore SDK напрямую.
+function filterVisible(list) {
+    if (isAdmin()) return list;
+    return list.filter((v) => !v.hidden);
 }
 
 // --- Видео ------------------------------------------------------------------
@@ -28,7 +35,7 @@ export const videosApi = {
     async fetchAll() {
         const snapshot = await getDocs(collection(db, this.collectionName));
         const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        return list.sort((a, b) => sortByTitle(a, b));
+        return filterVisible(list).sort((a, b) => sortByTitle(a, b));
     },
 
     /**
@@ -38,7 +45,7 @@ export const videosApi = {
     subscribeAll(callback) {
         return onSnapshot(collection(db, this.collectionName), (snapshot) => {
             const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-            callback(list.sort((a, b) => sortByTitle(a, b)));
+            callback(filterVisible(list).sort((a, b) => sortByTitle(a, b)));
         });
     },
 
@@ -55,7 +62,7 @@ export const videosApi = {
         );
         const snapshot = await getDocs(q);
         const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        return list.sort((a, b) => sortByTitle(a, b));
+        return filterVisible(list).sort((a, b) => sortByTitle(a, b));
     },
 
     /**
@@ -69,16 +76,19 @@ export const videosApi = {
         );
         return onSnapshot(q, (snapshot) => {
             const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-            callback(list.sort((a, b) => sortByTitle(a, b)));
+            callback(filterVisible(list).sort((a, b) => sortByTitle(a, b)));
         });
     },
 
     async fetchFolderNames() {
         const snapshot = await getDocs(collection(db, this.collectionName));
+        const admin = isAdmin();
         const folders = new Set();
         snapshot.forEach((d) => {
-            const folder = d.data().folder;
-            if (folder) folders.add(folder);
+            const data = d.data();
+            if (!data.folder) return;
+            if (!admin && data.hidden) return; // папка появляется только если есть видимое видео
+            folders.add(data.folder);
         });
         return [...folders].sort((a, b) => a.localeCompare(b, "ru"));
     },
@@ -321,6 +331,51 @@ export const videosApi = {
         formData.append("new_name", newName);
         const response = await fetch(
             `${API_BASE_URL}/api/folders/${encodeURIComponent(folderName)}`,
+            {
+                method: "PATCH",
+                headers: { Authorization: `Bearer ${token}` },
+                body: formData,
+            }
+        );
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || `Ошибка ${response.status}`);
+        }
+        return response.json();
+    },
+
+    /**
+     * Переключает скрытость одного видео.
+     */
+    async setHidden(id, hidden) {
+        const user = getCurrentUser();
+        if (!user) throw new Error("Не авторизован");
+        const token = await user.getIdToken();
+        const formData = new FormData();
+        formData.append("hidden", String(hidden));
+        const response = await fetch(`${API_BASE_URL}/api/videos/${id}/hidden`, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || `Ошибка ${response.status}`);
+        }
+        return response.json();
+    },
+
+    /**
+     * Массово переключает скрытость всех видео в папке.
+     */
+    async setFolderHidden(folderName, hidden) {
+        const user = getCurrentUser();
+        if (!user) throw new Error("Не авторизован");
+        const token = await user.getIdToken();
+        const formData = new FormData();
+        formData.append("hidden", String(hidden));
+        const response = await fetch(
+            `${API_BASE_URL}/api/folders/${encodeURIComponent(folderName)}/hidden`,
             {
                 method: "PATCH",
                 headers: { Authorization: `Bearer ${token}` },

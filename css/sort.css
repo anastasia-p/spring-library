@@ -1,0 +1,85 @@
+/* Контрол сортировки видео — две кнопки полей + кнопка направления. */
+
+.sort-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sort-control__field-group {
+    display: inline-flex;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.sort-control__field-btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: 'Onest', sans-serif;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1.4;
+}
+
+.sort-control__field-btn:hover {
+    background: var(--card);
+}
+
+.sort-control__field-btn--active {
+    background: var(--header-bg);
+    color: var(--text);
+}
+
+.sort-control__field-btn--active:hover {
+    background: var(--header-bg);
+    color: var(--text);
+}
+
+.sort-control__dir-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'Onest', sans-serif;
+    width: 30px;
+    height: 28px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+}
+
+.sort-control__dir-btn:hover {
+    background: var(--card);
+}
+
+/* Строка-обертка для section-title + контрола сортировки. */
+.section-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.section-row .section-title {
+    /* родительский margin-bottom мог быть на самом title — гасим, чтобы не было двойного отступа */
+    margin-bottom: 0;
+}
+
+/* Строка заголовка папки: имя слева, контрол сортировки справа. */
+.page-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}

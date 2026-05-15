@@ -46,6 +46,10 @@ const playlistNextEl = document.getElementById("playlist-next");
 const playlistPositionEl = document.getElementById("playlist-position");
 const btnPlayFolder = document.getElementById("btn-play-folder");
 const btnRepeat = document.getElementById("btn-repeat");
+const btnMarkA = document.getElementById("btn-mark-a");
+const btnMarkB = document.getElementById("btn-mark-b");
+const markDotA = document.getElementById("mark-dot-a");
+const markDotB = document.getElementById("mark-dot-b");
 
 const PLAYBACK_OPTS_KEY = "spring_library_playback_opts";
 const ACTIVE_CLASS = "ctrl-btn--active";
@@ -91,6 +95,10 @@ let currentIndex = -1;
 let pendingPlaybackRate = null;
 let pendingAutoplay = false;
 
+// A-B loop: метки отрезка. null = метка не задана. Сохраняются только в рамках сессии.
+let markA = null;
+let markB = null;
+
 async function init() {
     if (!videoId) {
         showError("В URL не указан id видео");
@@ -126,9 +134,74 @@ function setupPlaybackOptions() {
         savePlaybackOpts();
     });
     btnRepeat.addEventListener("click", () => {
+        const wasActive = btnRepeat.classList.contains(ACTIVE_CLASS);
         btnRepeat.classList.toggle(ACTIVE_CLASS);
+        // Если кнопка только что погасла И были метки — сбросить метки
+        if (wasActive && (markA !== null || markB !== null)) {
+            markA = null;
+            markB = null;
+            updateMarksUI();
+        }
         savePlaybackOpts();
     });
+
+    btnMarkA.addEventListener("click", () => setMark("A"));
+    btnMarkB.addEventListener("click", () => setMark("B"));
+}
+
+function setMark(which) {
+    const t = videoEl.currentTime || 0;
+    if (which === "A") markA = t;
+    else markB = t;
+    updateMarksUI();
+}
+
+// Перерисовка UI меток: подсветка кнопок A/B, засечки на таймлайне, градиент отрезка,
+// автоактивация "Повтор" и скрытие "Подряд" при активном отрезке.
+function updateMarksUI() {
+    btnMarkA.classList.toggle(ACTIVE_CLASS, markA !== null);
+    btnMarkB.classList.toggle(ACTIVE_CLASS, markB !== null);
+
+    const bothSet = markA !== null && markB !== null;
+    const duration = videoEl.duration || 0;
+
+    // Засечки в позициях A и B (видны как только метка задана, не дожидаясь второй)
+    updateMarkDot(markDotA, markA, duration);
+    updateMarkDot(markDotB, markB, duration);
+
+    // Подсветка отрезка — только когда заданы обе метки
+    if (bothSet && duration > 0) {
+        const start = Math.min(markA, markB);
+        const end = Math.max(markA, markB);
+        timelineEl.style.setProperty("--mark-start-pct", `${(start / duration) * 100}%`);
+        timelineEl.style.setProperty("--mark-end-pct", `${(end / duration) * 100}%`);
+    } else {
+        timelineEl.style.setProperty("--mark-start-pct", "0%");
+        timelineEl.style.setProperty("--mark-end-pct", "0%");
+    }
+
+    if (bothSet) {
+        // Автоактивация "Повтор" — только если еще не горит, чтобы не дергать savePlaybackOpts впустую
+        if (!btnRepeat.classList.contains(ACTIVE_CLASS)) {
+            btnRepeat.classList.add(ACTIVE_CLASS);
+            savePlaybackOpts();
+        }
+        // Пока есть отрезок — "Подряд" физически не сработает, прячем
+        btnPlayFolder.hidden = true;
+    } else {
+        // Меток нет — возвращаем "Подряд" если видео в папке
+        const inFolder = playlist.length >= 2 && currentIndex >= 0;
+        btnPlayFolder.hidden = !inFolder;
+    }
+}
+
+function updateMarkDot(dotEl, markValue, duration) {
+    if (markValue !== null && duration > 0) {
+        dotEl.style.left = `${(markValue / duration) * 100}%`;
+        dotEl.classList.remove("mark-dot--hidden");
+    } else {
+        dotEl.classList.add("mark-dot--hidden");
+    }
 }
 
 async function loadVideo(id, autoplay) {
@@ -138,6 +211,10 @@ async function loadVideo(id, autoplay) {
         return;
     }
     videoId = id;
+
+    // Метки живут только в рамках одного видео — при смене сбрасываем
+    markA = null;
+    markB = null;
 
     renderInfo(video);
 
@@ -165,6 +242,7 @@ async function loadVideo(id, autoplay) {
         currentIndex = -1;
     }
     renderPlaylistNav();
+    updateMarksUI();
 }
 
 function navigateToVideo(id, autoplay) {
@@ -280,11 +358,23 @@ function setupPlayer() {
             pendingAutoplay = false;
             videoEl.play().catch(() => {});
         }
+        // Пересчет градиента таймлайна с актуальной duration
+        updateMarksUI();
     });
 
     videoEl.addEventListener("timeupdate", () => {
         timelineEl.value = videoEl.currentTime;
         timeCurrentEl.textContent = formatDuration(Math.floor(videoEl.currentTime));
+
+        // A-B loop: при достижении конца отрезка прыгаем в начало.
+        // Мягкая клетка — seek вне отрезка разрешен, ловим только на end.
+        if (markA !== null && markB !== null) {
+            const start = Math.min(markA, markB);
+            const end = Math.max(markA, markB);
+            if (videoEl.currentTime >= end) {
+                videoEl.currentTime = start;
+            }
+        }
     });
 
     timelineEl.addEventListener("input", () => {
@@ -366,6 +456,10 @@ function setupSeekControls() {
             togglePlay();
         } else if (event.code === "KeyM") {
             toggleMute();
+        } else if (event.code === "KeyA") {
+            setMark("A");
+        } else if (event.code === "KeyB") {
+            setMark("B");
         }
     });
 }

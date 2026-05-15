@@ -134,16 +134,46 @@
             min-width: 42px;
         }
 
+        .pc-timeline-wrap {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
         .pc-timeline {
             flex: 1;
             -webkit-appearance: none;
             appearance: none;
-            background: rgba(255, 255, 255, 0.25);
+            background: linear-gradient(
+                to right,
+                rgba(255, 255, 255, 0.25) 0%,
+                rgba(255, 255, 255, 0.25) var(--mark-start-pct, 0%),
+                rgba(2, 149, 222, 0.55) var(--mark-start-pct, 0%),
+                rgba(2, 149, 222, 0.55) var(--mark-end-pct, 0%),
+                rgba(255, 255, 255, 0.25) var(--mark-end-pct, 0%),
+                rgba(255, 255, 255, 0.25) 100%
+            );
             height: 4px;
             border-radius: 2px;
             outline: none;
             cursor: pointer;
         }
+
+        .mark-dot {
+            position: absolute;
+            width: 2px;
+            height: 14px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 1px;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: opacity 0.15s;
+            z-index: 1;
+        }
+
+        .mark-dot--hidden { opacity: 0; }
 
         .pc-timeline::-webkit-slider-thumb {
             -webkit-appearance: none;
@@ -347,7 +377,11 @@
                 <div class="player-controls" id="player-controls">
                     <button id="play-btn" class="pc-btn" aria-label="Play/Pause">▶</button>
                     <span id="time-current" class="pc-time">0:00</span>
-                    <input id="timeline" class="pc-timeline" type="range" min="0" max="100" step="0.1" value="0">
+                    <div class="pc-timeline-wrap">
+                        <input id="timeline" class="pc-timeline" type="range" min="0" max="100" step="0.1" value="0">
+                        <div id="mark-dot-a" class="mark-dot mark-dot--hidden"></div>
+                        <div id="mark-dot-b" class="mark-dot mark-dot--hidden"></div>
+                    </div>
                     <span id="time-total" class="pc-time">0:00</span>
                     <button id="mute-btn" class="pc-btn" aria-label="Mute">🔊</button>
                 </div>
@@ -379,8 +413,10 @@
                 </div>
 
                 <div class="controls-row">
-                    <button class="ctrl-btn" id="btn-play-folder" hidden>Подряд</button>
+                    <button class="ctrl-btn" id="btn-mark-a">A</button>
+                    <button class="ctrl-btn" id="btn-mark-b">B</button>
                     <button class="ctrl-btn" id="btn-repeat">Повтор</button>
+                    <button class="ctrl-btn" id="btn-play-folder" hidden>Подряд</button>
                 </div>
             </div>
 

@@ -329,35 +329,13 @@
                             <label for="file" class="file-button">Выбрать файл</label>
                             <span id="file-label" class="file-name">Файл не выбран</span>
                         </div>
+                        <div class="field-hint">Название возьмется из имени файла, остальное можно дозаполнить в карточке редактирования.</div>
                     </div>
 
                     <div class="field" data-source="url" hidden>
                         <label for="url">Ссылка на видео</label>
                         <input type="url" id="url" autocomplete="off" placeholder="https://vk.com/video... или другой источник">
-                        <div class="field-hint">YouTube, ВК Видео, Rutube и многие другие. Дата записи подставится автоматически из источника.</div>
-                    </div>
-
-                    <div class="field">
-                        <label for="title">Название</label>
-                        <input type="text" id="title" required placeholder="Например: Часть 1">
-                    </div>
-
-                    <div class="field">
-                        <label for="folder">Папка (опционально)</label>
-                        <input type="text" id="folder" list="folder-list" placeholder="Например: Манекен">
-                        <datalist id="folder-list"></datalist>
-                        <div class="field-hint">Если пусто — видео ляжет в общий список. Существующие папки подсказываются автокомплитом.</div>
-                    </div>
-
-                    <div class="field">
-                        <label for="description">Описание (необязательно)</label>
-                        <textarea id="description" placeholder="Любые заметки про это видео"></textarea>
-                    </div>
-
-                    <div class="field" data-source="file">
-                        <label for="recorded_at">Дата записи (необязательно)</label>
-                        <input type="date" id="recorded_at">
-                        <div class="field-hint">Если оставить пустым — попробуем взять из метаданных файла.</div>
+                        <div class="field-hint">YouTube, ВК Видео, Rutube и многие другие. Название и дата подставятся из источника, остальное можно дозаполнить в карточке редактирования.</div>
                     </div>
 
                     <button type="submit" id="submit-btn" class="submit-btn">Загрузить</button>

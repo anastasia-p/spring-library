@@ -1,5 +1,8 @@
 // admin.html — добавление контента. Доступно только админу.
 // Логин/регистрация — общий auth-overlay (см. auth-overlay.js). Logout — в шапке (header.js).
+// Форма минимальная: только источник (файл/URL). Title подставляется автоматически на бэке
+// (из имени файла или yt-dlp), остальные поля дозаполняются в editor, который открывается
+// сразу после успешной загрузки.
 
 import { subscribeToAuth, isAdmin } from "./firebase.js";
 import { videosApi } from "./data.js";
@@ -21,8 +24,6 @@ const submitBtn = document.getElementById("submit-btn");
 const cancelBtn = document.getElementById("cancel-btn");
 const fileInput = document.getElementById("file");
 const fileLabel = document.getElementById("file-label");
-const folderListEl = document.getElementById("folder-list");
-const folderInput = document.getElementById("folder");
 const urlInput = document.getElementById("url");
 const sourceRadios = document.querySelectorAll("input[name='source']");
 const fileOnlyFields = document.querySelectorAll("[data-source='file']");
@@ -51,7 +52,6 @@ subscribeToAuth((user) => {
             didInit = true;
             initAdmin();
         }
-        loadVideoFolders();
     } else {
         adminSection.hidden = true;
         notAdminSection.hidden = false;
@@ -64,14 +64,6 @@ function initAdmin() {
 
     cancelBtn.addEventListener("click", () => {
         if (activeUploadController) activeUploadController.abort();
-    });
-
-    // Освежаем список папок при возврате во вкладку / фокусе на поле папки.
-    folderInput.addEventListener("focus", () => {
-        if (isAdmin()) loadVideoFolders();
-    });
-    document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && isAdmin()) loadVideoFolders();
     });
 
     uploadForm.addEventListener("submit", async (event) => {
@@ -122,21 +114,6 @@ function applySourceMode() {
     urlOnlyFields.forEach((el) => { el.hidden = isFile; });
 }
 
-// --- Папки для автокомплита ---
-async function loadVideoFolders() {
-    try {
-        const folders = await videosApi.fetchFolderNames();
-        folderListEl.innerHTML = "";
-        folders.forEach((name) => {
-            const opt = document.createElement("option");
-            opt.value = name;
-            folderListEl.appendChild(opt);
-        });
-    } catch (err) {
-        console.warn("Не удалось загрузить список папок:", err);
-    }
-}
-
 // --- Загрузка файлом ---
 async function handleFileUpload() {
     const file = fileInput.files[0];
@@ -145,12 +122,10 @@ async function handleFileUpload() {
         return;
     }
 
+    // В форме теперь только файл — title и остальные поля подставит бэк (имя файла,
+    // ffprobe-метаданные). Дозаполнение в editor, который откроется ниже.
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("title", document.getElementById("title").value);
-    formData.append("description", document.getElementById("description").value);
-    formData.append("recorded_at", document.getElementById("recorded_at").value);
-    formData.append("folder", document.getElementById("folder").value);
 
     submitBtn.disabled = true;
     showStatus("", "info");
@@ -165,14 +140,9 @@ async function handleFileUpload() {
             activeUploadController.signal,
         );
         hideProgress();
-        const folderPart = data.folder ? ` в папку "${data.folder}"` : "";
-        showStatus(
-            `Загружено: "${data.title}"${folderPart} (${data.duration_sec || "?"} сек)`,
-            "success"
-        );
-        openVideoEditor(data, { onSaved: loadVideoFolders });
+        showStatus(`Загружено: "${data.title}" (${data.duration_sec || "?"} сек)`, "success");
+        openVideoEditor(data);
         resetForm();
-        loadVideoFolders();
     } catch (err) {
         hideProgress();
         if (err.name === "AbortError") {
@@ -195,11 +165,9 @@ async function handleUrlUpload() {
         return;
     }
 
+    // В форме теперь только URL — title и остальное подставит yt-dlp (info.title, upload_date).
     const formData = new FormData();
     formData.append("url", url);
-    formData.append("title", document.getElementById("title").value);
-    formData.append("description", document.getElementById("description").value);
-    formData.append("folder", document.getElementById("folder").value);
 
     submitBtn.disabled = true;
     showStatus("", "info");
@@ -214,15 +182,13 @@ async function handleUrlUpload() {
             activeUploadController.signal,
         );
         hideProgress();
-        const folderPart = data.folder ? ` в папку "${data.folder}"` : "";
         const datePart = data.recorded_at ? `, дата ${formatDate(data.recorded_at)}` : "";
         showStatus(
-            `Скачано: "${data.title}"${folderPart} (${data.duration_sec || "?"} сек${datePart})`,
+            `Скачано: "${data.title}" (${data.duration_sec || "?"} сек${datePart})`,
             "success"
         );
-        openVideoEditor(data, { onSaved: loadVideoFolders });
+        openVideoEditor(data);
         resetForm();
-        loadVideoFolders();
     } catch (err) {
         hideProgress();
         if (err.name === "AbortError") {

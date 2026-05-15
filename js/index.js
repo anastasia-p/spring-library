@@ -1,9 +1,10 @@
 // Главная страница — табы Видео / Книги / Фильмы.
 // URL-hash отвечает за выбранный таб (#videos / #books / #films).
 
-import { subscribeToAuth } from "./firebase.js";
+import { subscribeToAuth, isAdmin } from "./firebase.js";
 import { videosApi } from "./data.js";
 import { createVideoCard, createFolderCard } from "./ui.js";
+import { createSortControl, loadSort, sortVideos } from "./sort-controls.js";
 
 const DEFAULT_TAB = "videos";
 
@@ -19,9 +20,16 @@ const foldersSection = document.getElementById("folders-section");
 const foldersList = document.getElementById("folders-list");
 const standaloneSection = document.getElementById("standalone-section");
 const standaloneList = document.getElementById("standalone-list");
+const standaloneSortContainer = document.getElementById("standalone-sort");
 
 // Какие табы уже загружали данные (чтобы не перезагружать при переключении назад)
 const loadedTabs = new Set();
+
+// Кэш последнего списка видео + текущая сортировка. Контрол сортировки меняет
+// currentSort и вызывает renderVideos(allVideosCache) — без повторного запроса.
+let allVideosCache = [];
+let currentSort = loadSort();
+let sortControlMounted = false;
 
 async function init() {
     setupTabRouting();
@@ -99,6 +107,7 @@ async function loadVideos() {
         standaloneSection.hidden = true;
 
         const videos = await videosApi.fetchAll();
+        allVideosCache = videos;
 
         videosLoadingEl.hidden = true;
 
@@ -120,7 +129,12 @@ async function loadVideos() {
 }
 
 function renderVideos(videos) {
-    videosTotalEl.textContent = `${videos.length} видео`;
+    const totalHidden = videos.reduce((n, v) => n + (v.hidden ? 1 : 0), 0);
+    let totalText = `${videos.length} видео`;
+    if (isAdmin() && totalHidden > 0) {
+        totalText += ` (из них скрыто ${totalHidden})`;
+    }
+    videosTotalEl.textContent = totalText;
     videosTotalEl.hidden = false;
 
     const folderMap = new Map();
@@ -128,8 +142,12 @@ function renderVideos(videos) {
 
     for (const video of videos) {
         if (video.folder) {
-            if (!folderMap.has(video.folder)) folderMap.set(video.folder, []);
-            folderMap.get(video.folder).push(video);
+            if (!folderMap.has(video.folder)) {
+                folderMap.set(video.folder, { count: 0, hiddenCount: 0 });
+            }
+            const f = folderMap.get(video.folder);
+            f.count += 1;
+            if (video.hidden) f.hiddenCount += 1;
         } else {
             standaloneVideos.push(video);
         }
@@ -139,20 +157,44 @@ function renderVideos(videos) {
     foldersList.innerHTML = "";
     const folderNames = [...folderMap.keys()].sort((a, b) => a.localeCompare(b, "ru"));
     for (const name of folderNames) {
-        foldersList.appendChild(createFolderCard(name, folderMap.get(name).length, {
+        const info = folderMap.get(name);
+        foldersList.appendChild(createFolderCard(name, info.count, {
             onDelete: loadVideos,
             onRenamed: loadVideos,
             existingFolders: folderNames,
+            allHidden: info.count > 0 && info.hiddenCount === info.count,
+            hasHidden: info.hiddenCount > 0,
+            onHiddenChanged: loadVideos,
         }));
     }
     foldersSection.hidden = folderNames.length === 0;
 
     // Одиночные видео
     standaloneList.innerHTML = "";
-    for (const video of standaloneVideos) {
-        standaloneList.appendChild(createVideoCard(video, { onDelete: loadVideos, onSaved: loadVideos }));
+    const standaloneSorted = sortVideos(standaloneVideos, currentSort.field, currentSort.dir);
+    for (const video of standaloneSorted) {
+        standaloneList.appendChild(createVideoCard(video, {
+            onDelete: loadVideos,
+            onSaved: loadVideos,
+            onHiddenChanged: loadVideos,
+        }));
     }
     standaloneSection.hidden = standaloneVideos.length === 0;
+
+    // Контрол сортировки монтируем один раз при первом рендере (когда контейнер уже в DOM).
+    mountSortControl();
+}
+
+function mountSortControl() {
+    if (sortControlMounted) return;
+    if (!standaloneSortContainer) return;
+    const ctrl = createSortControl((sort) => {
+        currentSort = sort;
+        // Перерисуем только стандалоны — папки сортируются отдельно (по алфавиту, не меняется).
+        renderVideos(allVideosCache);
+    });
+    standaloneSortContainer.appendChild(ctrl);
+    sortControlMounted = true;
 }
 
 init();
