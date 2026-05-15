@@ -1,0 +1,180 @@
+/* Карточки видео/папок. Используются на videos.html и folder.html. */
+
+.video-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+}
+
+.card {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    gap: 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    position: relative;
+}
+
+.card:hover {
+    border-color: var(--border-hover);
+}
+
+.card--folder {
+    /* Папки — плитка как было раньше */
+    grid-column: auto;
+    flex-direction: column;
+    padding: 16px;
+}
+
+.card--folder .card__title {
+    /* Резерв справа (под edit/delete у видео) не нужен — у папки этих кнопок нет */
+    padding-right: 0;
+}
+
+.card__thumb {
+    flex: 0 0 140px;
+    aspect-ratio: 16 / 9;
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    align-self: flex-start;
+}
+
+.card__thumb-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.card__thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+.card__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.card__title {
+    font-size: 15px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--text);
+    padding-right: 80px;
+}
+
+.card__description {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.card__source {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 12px;
+    color: var(--green);
+    text-decoration: none;
+    z-index: 1;
+}
+
+.card__source:hover {
+    text-decoration: underline;
+}
+
+.card__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: auto;
+}
+
+.card__meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    flex: 1;
+    min-width: 0;
+}
+
+.card__delete,
+.card__edit {
+    background: none;
+    border: none;
+    padding: 6px;
+    color: var(--text-hint);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+    font-family: inherit;
+    flex-shrink: 0;
+}
+
+.card__edit:hover {
+    color: var(--green);
+    background: var(--accent-light);
+}
+
+.card__delete:hover {
+    color: var(--red);
+    background: var(--red-light);
+}
+
+.card__delete:disabled,
+.card__edit:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.card__delete svg,
+.card__edit svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+/* Мобильная адаптация — превью уже */
+@media (max-width: 600px) {
+    .video-list {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .card {
+        gap: 10px;
+        padding: 10px;
+    }
+    .card__thumb {
+        flex: 0 0 100px;
+    }
+    .card__thumb-placeholder {
+        font-size: 24px;
+    }
+}

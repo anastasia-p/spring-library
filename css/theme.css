@@ -1,0 +1,271 @@
+/* Spring Library — общая палитра и базовые стили.
+ * Подключается на всех страницах кроме watch.html (у плеера тёмная тема,
+ * но header светлый — он подключает theme.css только для шапки). */
+
+:root {
+    /* Primary */
+    --green: #0295DE;
+    --green-dark: #0084C0;
+    --accent-light: #D8EDFD;
+    --accent-text: #0A4F73;
+
+    /* Surfaces */
+    --bg: #F7F6F2;
+    --card: #FFFFFF;
+    --header-bg: #D8EDFD;
+
+    /* Lines & text */
+    --border: rgba(0, 0, 0, 0.1);
+    --border-hover: rgba(0, 0, 0, 0.2);
+    --text: #1a1a18;
+    --text-muted: #888780;
+    --text-hint: #B4B2A9;
+
+    /* Status */
+    --red: #E24B4A;
+    --red-light: #FCEBEB;
+    --red-text: #A32D2D;
+
+    /* Radii */
+    --radius: 12px;
+    --radius-sm: 8px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Onest', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+}
+
+/* Контейнер страницы — Mobile-first ширина */
+.page {
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+/* --- Шапка с табами --- */
+
+.page-header {
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border);
+}
+
+.page-header__wrap {
+    max-width: 680px;
+    margin: 0 auto;
+    position: relative;
+}
+
+.page-header__add-btn {
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    z-index: 1;
+}
+
+.school-emblem {
+    position: absolute;
+    top: 50%;
+    right: 32px;
+    transform: translateY(-50%);
+    width: 64px;
+    height: 64px;
+    display: block;
+    z-index: 1;
+}
+
+.page-header__inner {
+    padding: 14px 16px;
+    padding-right: 140px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.page-header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1;
+}
+
+.page-header__logo {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: block;
+}
+
+.tabs-nav {
+    display: flex;
+    padding: 0 16px;
+}
+
+.tab-link {
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-family: 'Onest', sans-serif;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+    text-decoration: none;
+}
+
+.tab-link--active {
+    color: var(--green-dark);
+    border-bottom-color: var(--green-dark);
+}
+
+/* --- Контент-секции для табов --- */
+
+.tab-section {
+    display: none;
+}
+
+.tab-section--active {
+    display: block;
+}
+
+.page-content {
+    padding: 16px;
+}
+
+/* --- Навигация под шапкой (← Видео + заголовок страницы) --- */
+
+.page-nav {
+    margin-bottom: 16px;
+}
+
+.page-back-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+    display: inline-block;
+    margin-bottom: 8px;
+}
+
+.page-back-link:hover {
+    color: var(--text);
+}
+
+.page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: var(--text);
+}
+
+.page-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* --- Универсальные кнопки --- */
+
+.btn-primary {
+    background: var(--green);
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    font-family: 'Onest', sans-serif;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--green-dark);
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-family: 'Onest', sans-serif;
+    cursor: pointer;
+}
+
+.btn-secondary:hover {
+    background: var(--card);
+}
+
+/* --- Состояния списков --- */
+
+.empty-state,
+.error-state,
+.loading-state {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.error-state {
+    color: var(--red-text);
+}
+
+/* --- Заголовки секций (как в Tracker: ДИСЦИПЛИНЫ / ПЛАНЫ) --- */
+
+.section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.videos-total {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+/* Отступ между секциями (если первая видна) */
+#folders-section:not([hidden]) + #standalone-section {
+    margin-top: 24px;
+}
+
+/* --- Заглушка для будущих разделов --- */
+
+.stub {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.stub__icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+}

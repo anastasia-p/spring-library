@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Library — админ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/modal.css">
+    <style>
+        .page-content {
+            padding: 24px 16px 32px;
+        }
+
+        .form {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+
+        .field {
+            margin-bottom: 20px;
+        }
+
+        .field label {
+            display: block;
+            font-weight: 500;
+            font-size: 13px;
+            margin-bottom: 6px;
+            color: var(--text);
+        }
+
+        .field input[type="text"],
+        .field input[type="email"],
+        .field input[type="password"],
+        .field input[type="url"],
+        .field input[type="date"],
+        .field textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 15px;
+            font-family: 'Onest', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .field input:focus, .field textarea:focus {
+            outline: none;
+            border-color: var(--green);
+        }
+
+        .field textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .field-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Переключатель источника (Файл / Ссылка) */
+        .radio-group {
+            display: flex;
+            gap: 20px;
+            padding: 4px 0;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 0;
+            font-size: 14px;
+            font-weight: 400;
+            cursor: pointer;
+        }
+
+        .radio-group input[type="radio"] {
+            accent-color: var(--green);
+            cursor: pointer;
+        }
+
+        .file-picker {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .file-picker input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 0.1px;
+            height: 0.1px;
+        }
+
+        .file-picker .file-button {
+            background: var(--green);
+            color: #fff;
+            border: none;
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            font-family: 'Onest', sans-serif;
+        }
+
+        .file-picker .file-name {
+            color: var(--text-muted);
+            font-size: 13px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .submit-btn {
+            background: var(--green);
+            color: #fff;
+            border: none;
+            padding: 12px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 15px;
+            font-weight: 500;
+            font-family: 'Onest', sans-serif;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+            background: var(--green-dark);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .cancel-btn {
+            margin-top: 10px;
+            background: transparent;
+            color: var(--red-text);
+            border: 1px solid var(--red-text);
+            padding: 10px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            font-family: 'Onest', sans-serif;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .cancel-btn:hover {
+            background: var(--red-light);
+        }
+
+        .cancel-btn[hidden] { display: none; }
+
+        .status {
+            margin-top: 14px;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            min-height: 18px;
+        }
+
+        .status:empty { display: none; }
+        .status--info { background: var(--green-light); color: var(--green-text); }
+        .status--success { background: var(--green-light); color: var(--green-text); }
+        .status--error { background: var(--red-light); color: var(--red-text); }
+        .status a {
+            color: inherit;
+            text-decoration: underline;
+            margin-left: 6px;
+        }
+
+        /* Прогресс-бар скачивания по URL */
+        .progress {
+            margin-top: 14px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            height: 36px;
+            position: relative;
+        }
+
+        .progress[hidden] { display: none; }
+
+        .progress__bar {
+            background: var(--green);
+            height: 100%;
+            width: 0;
+            transition: width 0.25s ease;
+        }
+
+        .progress__bar--indeterminate {
+            width: 35%;
+            animation: progress-indeterminate 1.4s ease-in-out infinite;
+        }
+
+        @keyframes progress-indeterminate {
+            0%   { margin-left: -35%; }
+            100% { margin-left: 100%; }
+        }
+
+        .progress__label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+            text-shadow: 0 0 4px rgba(255, 255, 255, 0.7);
+            pointer-events: none;
+        }
+
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .logout-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            cursor: pointer;
+            font-family: 'Onest', sans-serif;
+        }
+
+        .logout-btn:hover {
+            background: var(--card);
+        }
+
+        /* Внутренние табы для админских форм */
+        .admin-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .admin-tab {
+            background: none;
+            border: none;
+            padding: 10px 14px;
+            font-size: 13px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: 'Onest', sans-serif;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.15s;
+        }
+
+        .admin-tab:hover { color: var(--text); }
+
+        .admin-tab--active {
+            color: var(--green);
+            border-bottom-color: var(--green);
+            font-weight: 500;
+        }
+
+        .admin-tab-content { display: none; }
+        .admin-tab-content--active { display: block; }
+    </style>
+</head>
+<body>
+    <header class="page-header">
+        <div class="page-header__wrap">
+            <a href="index.html" class="btn-primary page-header__add-btn">К библиотеке</a>
+            <div class="page-header__inner">
+                <img class="page-header__logo" src="img/logo.svg" alt="">
+                <h1>Spring Library</h1>
+            </div>
+            <nav class="tabs-nav">
+                <a href="index.html#videos" class="tab-link" data-tab="videos">🎬 Видео</a>
+                <a href="index.html#books" class="tab-link" data-tab="books">📚 Книги</a>
+                <a href="index.html#films" class="tab-link" data-tab="films">🎞 Фильмы</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="page-content page">
+        <div class="page-nav">
+            <h2 class="page-title">Админ</h2>
+            <div class="page-subtitle">Добавление контента</div>
+        </div>
+
+        <!-- Login -->
+        <section id="login-section" hidden>
+            <form id="login-form" class="form">
+                <h3 style="margin-bottom: 16px; font-size: 18px; font-weight: 600;">Вход</h3>
+
+                <div class="field">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" required autocomplete="username">
+                </div>
+
+                <div class="field">
+                    <label for="login-password">Пароль</label>
+                    <input type="password" id="login-password" required autocomplete="current-password">
+                </div>
+
+                <button type="submit" id="login-btn" class="submit-btn">Войти</button>
+                <div id="login-status" class="status"></div>
+            </form>
+        </section>
+
+        <!-- Admin -->
+        <section id="admin-section" hidden>
+            <div class="admin-header">
+                <span id="admin-email-label"></span>
+                <button id="logout-btn" class="logout-btn">Выйти</button>
+            </div>
+
+            <nav class="admin-tabs">
+                <button class="admin-tab admin-tab--active" data-tab="videos">🎬 Видео</button>
+                <button class="admin-tab" data-tab="books">📚 Книги</button>
+                <button class="admin-tab" data-tab="films">🎞 Фильмы</button>
+            </nav>
+
+            <div class="admin-tab-content admin-tab-content--active" data-tab-content="videos">
+                <form id="upload-form" class="form">
+                    <div class="field">
+                        <label>Источник</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="source" value="file" checked> Загрузить файл</label>
+                            <label><input type="radio" name="source" value="url"> Скачать по ссылке</label>
+                        </div>
+                    </div>
+
+                    <div class="field" data-source="file">
+                        <label for="file">Видео-файл</label>
+                        <div class="file-picker">
+                            <input type="file" id="file" accept="video/*">
+                            <label for="file" class="file-button">Выбрать файл</label>
+                            <span id="file-label" class="file-name">Файл не выбран</span>
+                        </div>
+                    </div>
+
+                    <div class="field" data-source="url" hidden>
+                        <label for="url">Ссылка на видео</label>
+                        <input type="url" id="url" autocomplete="off" placeholder="https://vk.com/video... или другой источник">
+                        <div class="field-hint">YouTube, ВК Видео, Rutube и многие другие. Дата записи подставится автоматически из источника.</div>
+                    </div>
+
+                    <div class="field">
+                        <label for="title">Название</label>
+                        <input type="text" id="title" required placeholder="Например: Часть 1">
+                    </div>
+
+                    <div class="field">
+                        <label for="folder">Папка (опционально)</label>
+                        <input type="text" id="folder" list="folder-list" autocomplete="off" placeholder="Например: Манекен">
+                        <datalist id="folder-list"></datalist>
+                        <div class="field-hint">Если пусто — видео ляжет в общий список. Существующие папки подсказываются автокомплитом.</div>
+                    </div>
+
+                    <div class="field">
+                        <label for="description">Описание (необязательно)</label>
+                        <textarea id="description" placeholder="Любые заметки про это видео"></textarea>
+                    </div>
+
+                    <div class="field" data-source="file">
+                        <label for="recorded_at">Дата записи (необязательно)</label>
+                        <input type="date" id="recorded_at">
+                        <div class="field-hint">Если оставить пустым — попробуем взять из метаданных файла.</div>
+                    </div>
+
+                    <button type="submit" id="submit-btn" class="submit-btn">Загрузить</button>
+                    <button type="button" id="cancel-btn" class="cancel-btn" hidden>Отменить</button>
+
+                    <div id="progress" class="progress" hidden>
+                        <div id="progress-bar" class="progress__bar"></div>
+                        <div id="progress-label" class="progress__label"></div>
+                    </div>
+
+                    <div id="status" class="status"></div>
+                </form>
+            </div>
+
+            <div class="admin-tab-content" data-tab-content="books">
+                <div class="stub">
+                    <div class="stub__icon">📚</div>
+                    <div>Добавление книг будет позже.</div>
+                </div>
+            </div>
+
+            <div class="admin-tab-content" data-tab-content="films">
+                <div class="stub">
+                    <div class="stub__icon">🎞</div>
+                    <div>Добавление фильмов будет позже.</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="js/admin.js"></script>
+</body>
+</html>

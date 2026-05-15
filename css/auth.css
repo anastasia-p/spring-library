@@ -1,0 +1,188 @@
+/* Auth-overlay — экран входа/регистрации поверх любой страницы.
+ * Структура и классы перенесены из Spring Tracker 1-в-1.
+ * Переменные локальные на .auth-overlay, чтобы стили работали и на светлых
+ * страницах (theme.css подключен), и на темной watch.html (без theme.css). */
+
+.auth-overlay {
+    --auth-green:      #0295DE;
+    --auth-bg:         #F7F6F2;
+    --auth-card:       #FFFFFF;
+    --auth-border:     rgba(0, 0, 0, 0.1);
+    --auth-text:       #1a1a18;
+    --auth-text-muted: #888780;
+    --auth-red:        #E24B4A;
+    --auth-radius:     12px;
+    --auth-radius-sm:  8px;
+
+    position: fixed;
+    inset: 0;
+    z-index: 9500;
+    background: var(--auth-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    overflow-y: auto;
+    font-family: 'Onest', sans-serif;
+    color: var(--auth-text);
+}
+
+.auth-box {
+    background: var(--auth-card);
+    border-radius: var(--auth-radius);
+    border: 1px solid var(--auth-border);
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 360px;
+}
+
+.auth-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+    justify-content: center;
+}
+
+.auth-logo h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.auth-subtitle {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--auth-text-muted);
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.auth-field label {
+    font-size: 12px;
+    color: var(--auth-text-muted);
+    font-weight: 500;
+}
+
+.auth-input {
+    border: 1px solid var(--auth-border);
+    border-radius: var(--auth-radius-sm);
+    padding: 10px 14px;
+    font-size: 15px;
+    font-family: 'Onest', sans-serif;
+    background: var(--auth-bg);
+    color: var(--auth-text);
+    width: 100%;
+    box-sizing: border-box;
+    outline: none;
+}
+
+.auth-input:focus {
+    border-color: var(--auth-green);
+}
+
+.auth-pass-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.auth-pass-wrap .auth-input {
+    padding-right: 42px;
+}
+
+.eye-btn {
+    position: absolute;
+    right: 12px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--auth-text-muted);
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.auth-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--auth-green);
+    color: white;
+    border: none;
+    border-radius: var(--auth-radius-sm);
+    font-size: 15px;
+    font-weight: 500;
+    font-family: 'Onest', sans-serif;
+    cursor: pointer;
+    margin-top: 4px;
+}
+
+.auth-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.auth-link {
+    font-size: 13px;
+    color: var(--auth-text-muted);
+    text-align: center;
+    margin-top: 16px;
+}
+
+.auth-link a {
+    color: var(--auth-green);
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.auth-error {
+    font-size: 13px;
+    color: var(--auth-red);
+    margin-bottom: 8px;
+    min-height: 18px;
+    display: block;
+}
+
+.req {
+    color: var(--auth-red);
+    margin-left: 2px;
+}
+
+/* Чекбокс политики конфиденциальности */
+.auth-privacy {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.auth-privacy input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: var(--auth-green);
+    cursor: pointer;
+}
+
+.auth-privacy label {
+    font-size: 13px;
+    color: var(--auth-text-muted);
+    cursor: pointer;
+    line-height: 1.5;
+}
+
+/* Неоткрываемая ссылка — выглядит как ссылка, но без href.
+ * Заменим на <a href> когда появится страница политики. */
+.auth-policy-link {
+    color: var(--auth-green);
+    font-weight: 500;
+}

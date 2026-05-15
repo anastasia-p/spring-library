@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Library</title>
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/auth.css">
+    <script type="module" src="js/auth-overlay.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Onest', sans-serif;
+            background: #1a1a18;
+            color: #f7f6f2;
+            min-height: 100vh;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            padding: 16px;
+        }
+
+        .back-link {
+            color: #f7f6f2;
+            text-decoration: none;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+
+        .back-link:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .player-wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 16px 32px;
+        }
+
+        .video-container {
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .video-container video {
+            width: 100%;
+            height: auto;
+            display: block;
+            max-height: 70vh;
+            background: #000;
+            transform-origin: center center;
+            touch-action: none;
+        }
+
+        .video-container--fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100vw;
+            height: 100vh;
+            max-height: none;
+            z-index: 9999;
+            border-radius: 0;
+        }
+
+        .video-container--fullscreen video {
+            width: 100%;
+            height: 100vh;
+            max-height: 100vh;
+            object-fit: contain;
+        }
+
+        .touch-zone {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 56px;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        .touch-zone--zoomed { cursor: grab; }
+        .touch-zone--zoomed:active { cursor: grabbing; }
+
+        .player-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 16px;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 70%, transparent 100%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 5;
+            transition: opacity 0.25s;
+        }
+
+        .pc-btn {
+            background: none;
+            color: #fff;
+            border: none;
+            padding: 6px;
+            font-size: 18px;
+            cursor: pointer;
+            font-family: 'Onest', sans-serif;
+            line-height: 1;
+            border-radius: 4px;
+        }
+
+        .pc-btn:hover { background: rgba(255, 255, 255, 0.15); }
+
+        .pc-time {
+            color: #f7f6f2;
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+            min-width: 42px;
+        }
+
+        .pc-timeline {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.25);
+            height: 4px;
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .pc-timeline::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #0295DE;
+            cursor: pointer;
+            border: none;
+        }
+
+        .pc-timeline::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #0295DE;
+            cursor: pointer;
+            border: none;
+        }
+
+        .fs-toggle {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            font-family: 'Onest', sans-serif;
+            z-index: 10;
+            transition: opacity 0.25s;
+        }
+
+        .fs-toggle:hover { background: rgba(0, 0, 0, 0.7); }
+
+        .zoom-indicator {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .zoom-indicator--show { opacity: 1; }
+
+        .seek-hint {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 24px;
+            font-size: 16px;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .seek-hint--left { left: 24px; }
+        .seek-hint--right { right: 24px; }
+        .seek-hint--show { opacity: 1; }
+
+        .controls-stack {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            transition: opacity 0.25s;
+        }
+
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 6px 10px;
+            background: #2c2c2a;
+            border-radius: 10px;
+            align-items: center;
+        }
+
+        .controls-label { display: none; }
+
+        .ctrl-btn {
+            background: #3a3a37;
+            color: #f7f6f2;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            font-family: 'Onest', sans-serif;
+            min-width: 40px;
+        }
+
+        .ctrl-btn:hover { background: #48484a; }
+        .ctrl-btn--active { background: #0295DE; }
+        .ctrl-btn--active:hover { background: #0295DE; }
+
+        .video-container--fullscreen .controls-stack {
+            position: absolute;
+            left: 16px;
+            right: 16px;
+            bottom: 56px;
+            margin-top: 0;
+            z-index: 6;
+        }
+
+        .video-container--fullscreen .controls-row {
+            background: rgba(44, 44, 42, 0.92);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+
+        .controls--hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .info { margin-top: 24px; }
+        .info__title { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+        .info__meta { font-size: 13px; color: #B4B2A9; margin-bottom: 12px; }
+        .info__source {
+            display: inline-block;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #0295DE;
+            text-decoration: none;
+        }
+        .info__source:hover { text-decoration: underline; }
+        .info__playlist {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .info__playlist[hidden] { display: none; }
+        .info__playlist-link {
+            color: #0295DE;
+            text-decoration: none;
+            font-size: 14px;
+            max-width: 45%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .info__playlist-link:hover { text-decoration: underline; }
+        .info__playlist-position {
+            font-size: 13px;
+            color: #B4B2A9;
+            flex-shrink: 0;
+        }
+        .info__playlist-spacer { flex: 1; }
+        .info__description {
+            font-size: 15px;
+            line-height: 1.5;
+            color: #c7c5bd;
+            white-space: pre-wrap;
+        }
+
+        .error-state {
+            text-align: center;
+            padding: 48px 16px;
+            color: #E24B4A;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a id="back-link" href="index.html#videos" class="back-link">← Видео</a>
+    </header>
+
+    <main class="player-wrap">
+        <div id="error-state" class="error-state" hidden></div>
+
+        <div id="player-content" hidden>
+            <div id="video-container" class="video-container">
+                <video id="video" preload="metadata" playsinline webkit-playsinline></video>
+                <div id="touch-zone" class="touch-zone"></div>
+                <div id="zoom-indicator" class="zoom-indicator">1.0x</div>
+                <div id="seek-hint-left" class="seek-hint seek-hint--left">− 10с</div>
+                <div id="seek-hint-right" class="seek-hint seek-hint--right">+ 10с</div>
+                <button id="fs-toggle" class="fs-toggle">⛶ Развернуть</button>
+
+                <div class="player-controls" id="player-controls">
+                    <button id="play-btn" class="pc-btn" aria-label="Play/Pause">▶</button>
+                    <span id="time-current" class="pc-time">0:00</span>
+                    <input id="timeline" class="pc-timeline" type="range" min="0" max="100" step="0.1" value="0">
+                    <span id="time-total" class="pc-time">0:00</span>
+                    <button id="mute-btn" class="pc-btn" aria-label="Mute">🔊</button>
+                </div>
+            </div>
+
+            <div id="controls-stack" class="controls-stack">
+                <div class="controls-row">
+                    <span class="controls-label">Увеличение:</span>
+                    <button class="ctrl-btn" id="zoom-out-btn">−</button>
+                    <button class="ctrl-btn" id="zoom-reset-btn">1x</button>
+                    <button class="ctrl-btn" id="zoom-in-btn">+</button>
+                    <span class="controls-label" id="zoom-value">1.0x</span>
+                </div>
+
+                <div class="controls-row">
+                    <span class="controls-label">Перемотка:</span>
+                    <button class="ctrl-btn" id="seek-back-btn">− 10с</button>
+                    <button class="ctrl-btn" id="seek-fwd-btn">+ 10с</button>
+                </div>
+
+                <div class="controls-row">
+                    <span class="controls-label">Скорость:</span>
+                    <button class="ctrl-btn" data-speed="0.25">0.25x</button>
+                    <button class="ctrl-btn" data-speed="0.5">0.5x</button>
+                    <button class="ctrl-btn" data-speed="0.75">0.75x</button>
+                    <button class="ctrl-btn ctrl-btn--active" data-speed="1">1x</button>
+                    <button class="ctrl-btn" data-speed="1.5">1.5x</button>
+                    <button class="ctrl-btn" data-speed="2">2x</button>
+                </div>
+
+                <div class="controls-row">
+                    <button class="ctrl-btn" id="btn-play-folder" hidden>Подряд</button>
+                    <button class="ctrl-btn" id="btn-repeat">Повтор</button>
+                </div>
+            </div>
+
+            <div class="info">
+                <h1 id="info-title" class="info__title"></h1>
+                <div id="info-meta" class="info__meta"></div>
+                <div id="info-playlist" class="info__playlist" hidden>
+                    <a id="playlist-prev" class="info__playlist-link" hidden></a>
+                    <div class="info__playlist-spacer"></div>
+                    <div id="playlist-position" class="info__playlist-position"></div>
+                    <div class="info__playlist-spacer"></div>
+                    <a id="playlist-next" class="info__playlist-link" hidden></a>
+                </div>
+                <a id="info-source" class="info__source" target="_blank" rel="noopener noreferrer" hidden></a>
+                <div id="info-description" class="info__description"></div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="js/watch.js"></script>
+</body>
+</html>
