@@ -6,6 +6,7 @@
     <title>Spring Library</title>
     <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/auth.css">
+    <link rel="stylesheet" href="css/notes.css">
     <script type="module" src="js/auth-overlay.js"></script>
     <style>
         * {
@@ -43,8 +44,56 @@
             background: rgba(255, 255, 255, 0.08);
         }
 
+        /* Сердечко в правом верхнем углу шапки плеера —
+           зеркально back-link слева. В fullscreen шапка скрывается
+           вместе с сердечком (что согласовано). */
+        .like-btn {
+            margin-left: auto;
+            background: none;
+            color: #f7f6f2;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s, background 0.15s, transform 0.1s;
+            font-family: inherit;
+        }
+
+        .like-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .like-btn:active {
+            transform: scale(0.92);
+        }
+
+        .like-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .like-btn svg {
+            width: 22px;
+            height: 22px;
+            display: block;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+        }
+
+        .like-btn--active {
+            color: #d9261c;
+        }
+
+        .like-btn--active svg {
+            fill: currentColor;
+        }
+
         .player-wrap {
-            max-width: 1200px;
+            max-width: 1600px;
             margin: 0 auto;
             padding: 0 16px 32px;
         }
@@ -60,7 +109,9 @@
             width: 100%;
             height: auto;
             display: block;
-            max-height: 70vh;
+            /* Использует максимум высоты при условии что controls-stack под
+               видео и topbar над ним вместе влезают в 100vh без скролла. */
+            max-height: calc(100vh - 260px);
             background: #000;
             transform-origin: center center;
             touch-action: none;
@@ -174,6 +225,27 @@
         }
 
         .mark-dot--hidden { opacity: 0; }
+
+        /* Отметки заметок на таймлайне. Лежат в том же wrap что и A/B-метки,
+           под ними по z-index (A/B всегда виднее как активный контрол).
+           Цвет — лимонно-желтый из иконки папки, для отличия от голубого A/B-градиента.
+           pointer-events: auto — чтобы ловить hover и показывать связь с заметкой в списке.
+           Drag по range в зоне точки не сработает — компромисс за интерактивность точек. */
+        .note-mark {
+            position: absolute;
+            width: 7px;
+            height: 7px;
+            background: #EEE318;
+            border: 1px solid #C9BC2D;
+            border-radius: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: default;
+            transition: transform 0.12s ease;
+        }
+        .note-mark:hover {
+            transform: translate(-50%, -50%) scale(1.6);
+        }
 
         .pc-timeline::-webkit-slider-thumb {
             -webkit-appearance: none;
@@ -307,41 +379,62 @@
             pointer-events: none;
         }
 
-        .info { margin-top: 24px; }
-        .info__title { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
-        .info__meta { font-size: 13px; color: #B4B2A9; margin-bottom: 12px; }
+        .info__title { font-size: 26px; font-weight: 600; margin-bottom: 10px; line-height: 1.25; }
+        .info__meta { font-size: 14px; color: #B4B2A9; }
+
+        /* Блок под видео: source + playlist.
+           margin-top: auto прижимает блок к низу main column (та растянута
+           через min-height до высоты sidebar). padding-top сохраняет
+           минимальный отступ от controls когда auto не работает —
+           например на коротком экране где видео+controls занимают все место. */
+        .watch-info-under-video {
+            margin-top: auto;
+            padding-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* "ВК Видео" под видео — прижато к левому краю. */
         .info__source {
-            display: inline-block;
-            margin-bottom: 16px;
+            align-self: flex-start;
             font-size: 14px;
             color: #0295DE;
             text-decoration: none;
         }
         .info__source:hover { text-decoration: underline; }
+
+        /* Плейлистная навигация: prev слева, "1 из 2" точно по центру, next справа.
+           Grid 1fr 1fr 1fr с жесткими grid-column — каждый элемент в своей трети,
+           даже если prev/next hidden. Внутри ячейки text-align двигает текст
+           к нужному краю; ссылки занимают всю ширину своей колонки, поэтому
+           стрелочка → у next гарантированно у правого края. */
         .info__playlist {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
             align-items: center;
             gap: 14px;
-            margin-bottom: 14px;
-            flex-wrap: wrap;
         }
         .info__playlist[hidden] { display: none; }
         .info__playlist-link {
             color: #0295DE;
             text-decoration: none;
             font-size: 14px;
-            max-width: 45%;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            min-width: 0;
         }
+        .info__playlist-link--prev { grid-column: 1; text-align: left; }
+        .info__playlist-link--next { grid-column: 3; text-align: right; }
         .info__playlist-link:hover { text-decoration: underline; }
         .info__playlist-position {
+            grid-column: 2;
             font-size: 13px;
             color: #B4B2A9;
-            flex-shrink: 0;
+            text-align: center;
         }
-        .info__playlist-spacer { flex: 1; }
+
         .info__description {
             font-size: 15px;
             line-height: 1.5;
@@ -355,83 +448,201 @@
             color: #E24B4A;
             font-size: 14px;
         }
+
+        /* Двухколоночный layout для desktop: слева видео + controls + source/playlist,
+           справа title/meta (зафиксированы) + скроллящаяся область с description
+           и заметками. На ≤1024px переключается на вертикальный поток. */
+        .watch-layout {
+            display: grid;
+            grid-template-columns: 1fr 430px;
+            gap: 24px;
+            align-items: start;
+        }
+        .watch-layout__main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            /* min-height фиксирует высоту main column на уровне sidebar
+               (тот тоже calc(100vh - 150px)), чтобы блок под видео
+               через margin-top: auto уезжал в самый низ контейнера. */
+            min-height: calc(100vh - 150px);
+        }
+        /* Sidebar — flex column с фиксированной высотой.
+           Сам sidebar НЕ скроллится: scrollbar принадлежит внутреннему
+           wrapper-у .watch-layout__sidebar-scroll, поэтому полоса не идет
+           вдоль зафиксированной шапки, а только в зоне content под ней. */
+        .watch-layout__sidebar {
+            max-height: calc(100vh - 150px);
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .watch-layout__sidebar-scroll {
+            flex: 1;
+            min-height: 0;       /* критично для flex child с overflow */
+            overflow-y: auto;
+        }
+        /* Тонкая полоска скролла — чтобы не отъедала ширину контента */
+        .watch-layout__sidebar-scroll::-webkit-scrollbar { width: 6px; }
+        .watch-layout__sidebar-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+        }
+        .watch-layout__sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+
+        /* Зафиксированная шапка sidebar: только title + meta.
+           Источник и playlist перенесены в main column под видео. */
+        .info__head {
+            flex-shrink: 0;
+            padding-bottom: 14px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        @media (max-width: 1024px) {
+            .watch-layout {
+                display: block;
+            }
+            .watch-layout__main {
+                min-height: 0;
+            }
+            .watch-info-under-video {
+                margin-top: 0;
+            }
+            .watch-layout__sidebar {
+                display: block;
+                max-height: none;
+            }
+            .watch-layout__sidebar-scroll {
+                overflow: visible;
+            }
+            .info__head {
+                margin-top: 24px;
+                margin-bottom: 0;
+                padding-bottom: 0;
+                border-bottom: none;
+            }
+        }
+
+        /* Лимонно-желтая иконка папки — заменяет эмодзи 📁 в мета-строке.
+           Цвет приходит из SVG, размер — relative к font-size родителя. */
+        .folder-icon {
+            display: inline-block;
+            width: 1.1em;
+            height: 1.1em;
+            vertical-align: -0.15em;
+            margin-right: 0.5em;
+        }
     </style>
 </head>
 <body>
     <header class="topbar">
         <a id="back-link" href="index.html#videos" class="back-link">← Видео</a>
+        <button id="like-btn" class="like-btn" type="button" aria-label="Лайк" title="Лайк">
+            <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path>
+            </svg>
+        </button>
     </header>
 
     <main class="player-wrap">
         <div id="error-state" class="error-state" hidden></div>
 
         <div id="player-content" hidden>
-            <div id="video-container" class="video-container">
-                <video id="video" preload="metadata" playsinline webkit-playsinline></video>
-                <div id="touch-zone" class="touch-zone"></div>
-                <div id="zoom-indicator" class="zoom-indicator">1.0x</div>
-                <div id="seek-hint-left" class="seek-hint seek-hint--left">− 10с</div>
-                <div id="seek-hint-right" class="seek-hint seek-hint--right">+ 10с</div>
-                <button id="fs-toggle" class="fs-toggle">⛶ Развернуть</button>
+            <div class="watch-layout">
+                <div class="watch-layout__main">
+                    <div id="video-container" class="video-container">
+                        <video id="video" preload="metadata" playsinline webkit-playsinline></video>
+                        <div id="touch-zone" class="touch-zone"></div>
+                        <div id="zoom-indicator" class="zoom-indicator">1.0x</div>
+                        <div id="seek-hint-left" class="seek-hint seek-hint--left">− 10с</div>
+                        <div id="seek-hint-right" class="seek-hint seek-hint--right">+ 10с</div>
+                        <button id="fs-toggle" class="fs-toggle">⛶ Развернуть</button>
 
-                <div class="player-controls" id="player-controls">
-                    <button id="play-btn" class="pc-btn" aria-label="Play/Pause">▶</button>
-                    <span id="time-current" class="pc-time">0:00</span>
-                    <div class="pc-timeline-wrap">
-                        <input id="timeline" class="pc-timeline" type="range" min="0" max="100" step="0.1" value="0">
-                        <div id="mark-dot-a" class="mark-dot mark-dot--hidden"></div>
-                        <div id="mark-dot-b" class="mark-dot mark-dot--hidden"></div>
+                        <div class="player-controls" id="player-controls">
+                            <button id="play-btn" class="pc-btn" aria-label="Play/Pause">▶</button>
+                            <span id="time-current" class="pc-time">0:00</span>
+                            <div class="pc-timeline-wrap">
+                                <input id="timeline" class="pc-timeline" type="range" min="0" max="100" step="0.1" value="0">
+                                <div id="mark-dot-a" class="mark-dot mark-dot--hidden"></div>
+                                <div id="mark-dot-b" class="mark-dot mark-dot--hidden"></div>
+                            </div>
+                            <span id="time-total" class="pc-time">0:00</span>
+                            <button id="mute-btn" class="pc-btn" aria-label="Mute">🔊</button>
+                        </div>
                     </div>
-                    <span id="time-total" class="pc-time">0:00</span>
-                    <button id="mute-btn" class="pc-btn" aria-label="Mute">🔊</button>
-                </div>
-            </div>
 
-            <div id="controls-stack" class="controls-stack">
-                <div class="controls-row">
-                    <span class="controls-label">Увеличение:</span>
-                    <button class="ctrl-btn" id="zoom-out-btn">−</button>
-                    <button class="ctrl-btn" id="zoom-reset-btn">1x</button>
-                    <button class="ctrl-btn" id="zoom-in-btn">+</button>
-                    <span class="controls-label" id="zoom-value">1.0x</span>
+                    <div id="controls-stack" class="controls-stack">
+                        <div class="controls-row">
+                            <span class="controls-label">Увеличение:</span>
+                            <button class="ctrl-btn" id="zoom-out-btn">−</button>
+                            <button class="ctrl-btn" id="zoom-reset-btn">1x</button>
+                            <button class="ctrl-btn" id="zoom-in-btn">+</button>
+                            <span class="controls-label" id="zoom-value">1.0x</span>
+                        </div>
+
+                        <div class="controls-row">
+                            <span class="controls-label">Скорость:</span>
+                            <button class="ctrl-btn" data-speed="0.25">0.25x</button>
+                            <button class="ctrl-btn" data-speed="0.5">0.5x</button>
+                            <button class="ctrl-btn" data-speed="0.75">0.75x</button>
+                            <button class="ctrl-btn ctrl-btn--active" data-speed="1">1x</button>
+                            <button class="ctrl-btn" data-speed="1.5">1.5x</button>
+                            <button class="ctrl-btn" data-speed="2">2x</button>
+                        </div>
+
+                        <div class="controls-row">
+                            <button class="ctrl-btn" id="btn-mark-a">A</button>
+                            <button class="ctrl-btn" id="btn-mark-b">B</button>
+                            <button class="ctrl-btn" id="btn-repeat">Повтор</button>
+                            <button class="ctrl-btn" id="btn-play-folder" hidden>Подряд</button>
+                        </div>
+
+                        <div class="controls-row">
+                            <button class="ctrl-btn" id="add-note-btn">+ Заметка</button>
+                        </div>
+                    </div>
+
+                    <!-- Под видео и controls: ссылка на источник + плейлистная навигация.
+                         Перенесено из sidebar по дизайн-решению — освобождает место
+                         под title/meta/description/notes справа. -->
+                    <div class="watch-info-under-video">
+                        <a id="info-source" class="info__source" target="_blank" rel="noopener noreferrer" hidden></a>
+                        <div id="info-playlist" class="info__playlist" hidden>
+                            <a id="playlist-prev" class="info__playlist-link info__playlist-link--prev" hidden></a>
+                            <div id="playlist-position" class="info__playlist-position"></div>
+                            <a id="playlist-next" class="info__playlist-link info__playlist-link--next" hidden></a>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="controls-row">
-                    <span class="controls-label">Перемотка:</span>
-                    <button class="ctrl-btn" id="seek-back-btn">− 10с</button>
-                    <button class="ctrl-btn" id="seek-fwd-btn">+ 10с</button>
-                </div>
+                <aside class="watch-layout__sidebar">
+                    <!-- Зафиксированная шапка: title + meta.
+                         Source и playlist перенесены в main column под видео. -->
+                    <div class="info__head">
+                        <h1 id="info-title" class="info__title"></h1>
+                        <div id="info-meta" class="info__meta"></div>
+                    </div>
 
-                <div class="controls-row">
-                    <span class="controls-label">Скорость:</span>
-                    <button class="ctrl-btn" data-speed="0.25">0.25x</button>
-                    <button class="ctrl-btn" data-speed="0.5">0.5x</button>
-                    <button class="ctrl-btn" data-speed="0.75">0.75x</button>
-                    <button class="ctrl-btn ctrl-btn--active" data-speed="1">1x</button>
-                    <button class="ctrl-btn" data-speed="1.5">1.5x</button>
-                    <button class="ctrl-btn" data-speed="2">2x</button>
-                </div>
+                    <!-- Скроллящаяся область: описание + заметки.
+                         Scrollbar появится только здесь, под фиксированной шапкой. -->
+                    <div class="watch-layout__sidebar-scroll">
+                        <div id="info-description" class="info__description"></div>
 
-                <div class="controls-row">
-                    <button class="ctrl-btn" id="btn-mark-a">A</button>
-                    <button class="ctrl-btn" id="btn-mark-b">B</button>
-                    <button class="ctrl-btn" id="btn-repeat">Повтор</button>
-                    <button class="ctrl-btn" id="btn-play-folder" hidden>Подряд</button>
-                </div>
-            </div>
-
-            <div class="info">
-                <h1 id="info-title" class="info__title"></h1>
-                <div id="info-meta" class="info__meta"></div>
-                <div id="info-playlist" class="info__playlist" hidden>
-                    <a id="playlist-prev" class="info__playlist-link" hidden></a>
-                    <div class="info__playlist-spacer"></div>
-                    <div id="playlist-position" class="info__playlist-position"></div>
-                    <div class="info__playlist-spacer"></div>
-                    <a id="playlist-next" class="info__playlist-link" hidden></a>
-                </div>
-                <a id="info-source" class="info__source" target="_blank" rel="noopener noreferrer" hidden></a>
-                <div id="info-description" class="info__description"></div>
+                        <!-- Заметки к видео: личные, по uid. -->
+                        <section id="notes-section" class="notes-section" hidden>
+                            <div class="notes-section__header">
+                                <h3 class="notes-section__title">
+                                    Заметки<span id="notes-count" class="notes-section__count"></span>
+                                </h3>
+                            </div>
+                            <div id="notes-empty" class="notes-section__empty" hidden>
+                                Пока заметок нет. Поставьте видео на нужный момент и нажмите «+ Заметка» в управлении.
+                            </div>
+                            <ul id="notes-list" class="notes-list"></ul>
+                        </section>
+                    </div>
+                </aside>
             </div>
         </div>
     </main>

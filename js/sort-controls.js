@@ -54,6 +54,49 @@ export function sortVideos(videos, field, dir) {
     return list;
 }
 
+/**
+ * Сортировка видео с лайками как первым ключом.
+ * Сначала идут лайкнутые видео (с обычной сортировкой field/dir внутри группы),
+ * потом нелайкнутые (тоже с field/dir внутри группы).
+ * @param {Array} videos массив объектов с .id
+ * @param {string} field "name" | "date"
+ * @param {string} dir "asc" | "desc"
+ * @param {Set<string>} likedIdsSet множество id лайкнутых видео
+ * @returns {Array}
+ */
+export function sortVideosWithLikes(videos, field, dir, likedIdsSet) {
+    const liked = [];
+    const unliked = [];
+    for (const v of videos) {
+        if (likedIdsSet && likedIdsSet.has(v.id)) liked.push(v);
+        else unliked.push(v);
+    }
+    return [
+        ...sortVideos(liked, field, dir),
+        ...sortVideos(unliked, field, dir),
+    ];
+}
+
+/**
+ * Сортировка имен папок: лайкнутые сначала, затем нелайкнутые.
+ * Внутри каждой группы — по алфавиту (русская локаль).
+ * @param {string[]} folderNames
+ * @param {Set<string>} likedNamesSet
+ * @returns {string[]}
+ */
+export function sortFoldersWithLikes(folderNames, likedNamesSet) {
+    const liked = [];
+    const unliked = [];
+    for (const name of folderNames) {
+        if (likedNamesSet && likedNamesSet.has(name)) liked.push(name);
+        else unliked.push(name);
+    }
+    const compare = (a, b) => a.localeCompare(b, "ru");
+    liked.sort(compare);
+    unliked.sort(compare);
+    return [...liked, ...unliked];
+}
+
 function videoDateMillis(v) {
     if (v.recorded_at) {
         const t = new Date(v.recorded_at).getTime();

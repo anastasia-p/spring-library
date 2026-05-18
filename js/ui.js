@@ -2,7 +2,14 @@
 
 import { formatDuration, formatBytes, formatDate, getSourceLabel } from "./utils.js";
 import { videosApi } from "./data.js";
-import { isAdmin } from "./firebase.js";
+import {
+    isAdmin,
+    isVideoLiked,
+    isFolderLiked,
+    toggleVideoLike,
+    toggleFolderLike,
+    subscribeToProfile,
+} from "./firebase.js";
 import { openVideoEditor } from "./editor.js";
 import { openFolderEditor } from "./folder-editor.js";
 
@@ -33,11 +40,43 @@ const EYE_OFF_ICON_SVG = `
     <line x1="1" y1="1" x2="23" y2="23"></line>
 </svg>`;
 
+// Сердечко — одна SVG, fill переключается через CSS на currentColor при .card__like--active
+const HEART_ICON_SVG = `
+<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path>
+</svg>`;
+
+// Иконка папки — flat-стиль, лимонно-желтый из эмблемы школы (приглушенный),
+// с тонкой обводкой на пару ступеней темнее заливки.
+// Используется в createFolderCard здесь, а также в folder.js и watch.js через экспорт.
+const FOLDER_ICON_FILL = "#EEE318";
+const FOLDER_ICON_STROKE = "#C9BC2D";
+
+/**
+ * Создает SVG-иконку папки как inline-block элемент.
+ * Размер задается через CSS (.folder-icon) — em-units, автомасштабируется
+ * под font-size родителя. Декоративная, aria-hidden.
+ */
+export function createFolderIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("class", "folder-icon");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M2 4 L9 4 L11 6 L22 6 L22 22 L2 22 Z");
+    path.setAttribute("fill", FOLDER_ICON_FILL);
+    path.setAttribute("stroke", FOLDER_ICON_STROKE);
+    path.setAttribute("stroke-width", "0.8");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+    return svg;
+}
+
 /**
  * Карточка видео. У админа — иконки редактирования и удаления.
- * Layout: превью слева, контент справа (title, description, source-link, footer).
- * Если у видео есть source_url — отображается ссылка "Открыть в X".
- * Превью грузится по /thumb/{id}; при 404 показывается плейсхолдер.
+ * Layout: превью слева (с сердечком в правом верхнем углу),
+ * контент справа (title, description, footer с meta+source+actions).
+ * source-линка теперь живет внутри строки метаданных, не как абсолют сверху.
  * @param {object} video
  * @param {object} options
  * @param {function} options.onDelete - callback после успешного удаления (для рефреша списка)
@@ -73,7 +112,7 @@ export function createVideoCard(video, { onDelete, onSaved, onHiddenChanged } = 
 
     const meta = document.createElement("div");
     meta.className = "card__meta";
-    meta.textContent = formatVideoMeta(video);
+    fillVideoMeta(meta, video);
     footer.appendChild(meta);
 
     if (isAdmin()) {
@@ -87,17 +126,15 @@ export function createVideoCard(video, { onDelete, onSaved, onHiddenChanged } = 
 
     body.appendChild(footer);
     card.appendChild(body);
-
-    if (video.source_url) {
-        card.appendChild(createSourceLink(video.source_url));
-    }
+    card.appendChild(createLikeButton("video", video.id));
 
     return card;
 }
 
 /**
  * Карточка папки внутри раздела (например, папка видео).
- * У админа — иконки редактирования и удаления (как у видео-карточки).
+ * Сердечко в правом верхнем углу карточки.
+ * У админа — иконки скрытия/редактирования/удаления в футере.
  * @param {string} folderName
  * @param {number} videoCount
  * @param {object} options
@@ -114,15 +151,14 @@ export function createFolderCard(folderName, videoCount, { onDelete, onRenamed, 
 
     const title = document.createElement("h3");
     title.className = "card__title";
-    title.textContent = `📁 ${folderName}`;
+    title.appendChild(createFolderIcon());
+    title.appendChild(document.createTextNode(folderName));
     card.appendChild(title);
 
-    const footer = document.createElement("div");
-    footer.className = "card__footer";
-    const meta = document.createElement("div");
+    const meta = document.createElement("span");
     meta.className = "card__meta";
     meta.textContent = `${videoCount} видео`;
-    footer.appendChild(meta);
+    card.appendChild(meta);
 
     if (isAdmin()) {
         const actions = document.createElement("div");
@@ -130,12 +166,63 @@ export function createFolderCard(folderName, videoCount, { onDelete, onRenamed, 
         actions.appendChild(createFolderHideButton(folderName, !!allHidden, !!hasHidden, onHiddenChanged));
         actions.appendChild(createFolderEditButton(folderName, videoCount, onRenamed, existingFolders));
         actions.appendChild(createFolderDeleteButton(folderName, videoCount, onDelete));
-        footer.appendChild(actions);
+        card.appendChild(actions);
     }
 
-    card.appendChild(footer);
+    card.appendChild(createLikeButton("folder", folderName));
+
     return card;
 }
+
+// --- Лайки ----------------------------------------------------------------
+// Кнопка сердечка. Кликает — toggle через firebase.js, UI обновляется
+// через глобальную подписку ниже (Firestore SDK → onSnapshot → subscribeToProfile).
+
+function createLikeButton(targetType, targetId) {
+    const liked = targetType === "video" ? isVideoLiked(targetId) : isFolderLiked(targetId);
+    const btn = document.createElement("button");
+    btn.className = liked ? "card__like card__like--active" : "card__like";
+    btn.innerHTML = HEART_ICON_SVG;
+    btn.title = liked ? "Убрать лайк" : "Лайк";
+    btn.setAttribute("aria-label", btn.title);
+    btn.dataset.likeTarget = targetType;
+    btn.dataset.likeId = targetId;
+    btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        btn.disabled = true;
+        try {
+            if (targetType === "video") {
+                await toggleVideoLike(targetId);
+            } else {
+                await toggleFolderLike(targetId);
+            }
+        } catch (err) {
+            console.error("Ошибка лайка:", err);
+            alert(`Не удалось обновить лайк: ${err.message}`);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+    return btn;
+}
+
+// Единая глобальная подписка. При изменении профиля проходим по всем сердечкам
+// на странице и обновляем визуальное состояние. На текущем масштабе (десятки
+// карточек) дешевле, чем подписка на каждую карточку с управлением cleanup.
+subscribeToProfile(() => {
+    document.querySelectorAll(".card__like").forEach((btn) => {
+        const targetType = btn.dataset.likeTarget;
+        const targetId = btn.dataset.likeId;
+        if (!targetType || !targetId) return;
+        const liked = targetType === "video"
+            ? isVideoLiked(targetId)
+            : isFolderLiked(targetId);
+        btn.classList.toggle("card__like--active", liked);
+        const newTitle = liked ? "Убрать лайк" : "Лайк";
+        btn.title = newTitle;
+        btn.setAttribute("aria-label", newTitle);
+    });
+});
 
 // --- Внутренние -----------------------------------------------------------
 
@@ -291,10 +378,27 @@ function createFolderHideButton(folderName, allHidden, hasHidden, onHiddenChange
     return btn;
 }
 
-function formatVideoMeta(video) {
-    const parts = [];
-    if (video.duration_sec != null) parts.push(formatDuration(video.duration_sec));
-    if (video.file_size_bytes) parts.push(formatBytes(video.file_size_bytes));
-    if (video.recorded_at) parts.push(formatDate(video.recorded_at));
-    return parts.join(" · ");
+/**
+ * Наполняет элемент мета-строкой видео: "длительность · размер · дата · ВК".
+ * Source-линка (если есть source_url) — кликабельная ссылка, не пробрасывает
+ * клик на карточку. Текстовые части и ссылка чередуются через текстовые узлы,
+ * чтобы все встало в одну строку.
+ */
+function fillVideoMeta(parent, video) {
+    parent.replaceChildren();
+    const textParts = [];
+    if (video.duration_sec != null) textParts.push(formatDuration(video.duration_sec));
+    if (video.file_size_bytes) textParts.push(formatBytes(video.file_size_bytes));
+    if (video.recorded_at) textParts.push(formatDate(video.recorded_at));
+
+    if (textParts.length > 0) {
+        parent.appendChild(document.createTextNode(textParts.join(" · ")));
+    }
+
+    if (video.source_url) {
+        if (textParts.length > 0) {
+            parent.appendChild(document.createTextNode(" · "));
+        }
+        parent.appendChild(createSourceLink(video.source_url));
+    }
 }

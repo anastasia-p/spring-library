@@ -26,6 +26,12 @@
     --red-light: #FCEBEB;
     --red-text: #A32D2D;
 
+    /* Likes — отдельная семантика для лайков (цвет с эмблемы школы Вин Чун).
+       Переменные отдельные от --red, чтобы лайк семантически не путался
+       с ошибками/удалением. */
+    --like: #d9261c;
+    --like-bg: #FCEBEB;
+
     /* Radii */
     --radius: 12px;
     --radius-sm: 8px;
@@ -230,6 +236,31 @@ body {
 
 .error-state {
     color: var(--red-text);
+}
+
+/* Лоадер появляется с задержкой 200мс — если данные прилетают быстрее
+   (например, из persistentLocalCache), элемент успевает стать hidden
+   до запуска анимации и пользователь не видит мигания. */
+.loading-state {
+    opacity: 0;
+    animation: loading-state-fade-in 0.2s ease-out 0.2s forwards;
+}
+
+@keyframes loading-state-fade-in {
+    to { opacity: 1; }
+}
+
+/* --- Иконка папки ---
+ * Лимонно-желтая SVG-иконка вместо эмодзи 📁 (цвет с эмблемы школы).
+ * Inline-block, размер в em — автомасштабируется под font-size родителя.
+ * Используется в карточках папок, заголовке страницы папки, мета-строке плеера. */
+.folder-icon {
+    display: inline-block;
+    width: 1.1em;
+    height: 1.1em;
+    vertical-align: -0.15em;
+    margin-right: 0.5em;
+    flex-shrink: 0;
 }
 
 /* --- Заголовки секций (как в Tracker: ДИСЦИПЛИНЫ / ПЛАНЫ) --- */

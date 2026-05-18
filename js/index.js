@@ -1,10 +1,15 @@
 // Главная страница — табы Видео / Книги / Фильмы.
 // URL-hash отвечает за выбранный таб (#videos / #books / #films).
 
-import { subscribeToAuth, isAdmin } from "./firebase.js";
+import { subscribeToAuth, isAdmin, subscribeToProfile, getUserProfile } from "./firebase.js";
 import { videosApi } from "./data.js";
 import { createVideoCard, createFolderCard } from "./ui.js";
-import { createSortControl, loadSort, sortVideos } from "./sort-controls.js";
+import {
+    createSortControl,
+    loadSort,
+    sortVideosWithLikes,
+    sortFoldersWithLikes,
+} from "./sort-controls.js";
 
 const DEFAULT_TAB = "videos";
 
@@ -22,32 +27,70 @@ const standaloneSection = document.getElementById("standalone-section");
 const standaloneList = document.getElementById("standalone-list");
 const standaloneSortContainer = document.getElementById("standalone-sort");
 
-// Какие табы уже загружали данные (чтобы не перезагружать при переключении назад)
-const loadedTabs = new Set();
+// Какие табы уже подписались на данные (чтобы не плодить подписки при переключении назад)
+const subscribedTabs = new Set();
 
 // Кэш последнего списка видео + текущая сортировка. Контрол сортировки меняет
 // currentSort и вызывает renderVideos(allVideosCache) — без повторного запроса.
 let allVideosCache = [];
 let currentSort = loadSort();
 let sortControlMounted = false;
+let unsubscribeFromVideos = null;
+
+// --- Сохранение позиции скролла ---
+// При ре-рендере списка (редактирование, скрытие, лайк → onSnapshot)
+// и при возврате с watch.html через back — позиция теряется.
+// Решение: синхронный снапшот scrollY ДО изменения DOM,
+// восстановление через requestAnimationFrame ПОСЛЕ.
+// Между страницами — sessionStorage по url.
+if ("scrollRestoration" in history) {
+    history.scrollRestoration = "manual";
+}
+const SCROLL_STORAGE_KEY = `scroll_${location.pathname}${location.search}`;
+let scrollRestoredFromStorage = false;
+window.addEventListener("pagehide", () => {
+    sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY));
+});
+
+function restoreScrollAfterRender(savedScroll) {
+    // Первый рендер на странице — приоритет у сохранённой между страницами позиции.
+    if (!scrollRestoredFromStorage) {
+        scrollRestoredFromStorage = true;
+        const stored = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+        if (stored) {
+            sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+            const y = parseInt(stored, 10);
+            if (y > 0) {
+                requestAnimationFrame(() => window.scrollTo(0, y));
+                return;
+            }
+        }
+    }
+    // Последующие рендеры — возвращаемся к снапшоту, если был ненулевой.
+    if (savedScroll > 0) {
+        requestAnimationFrame(() => window.scrollTo(0, savedScroll));
+    }
+}
 
 async function init() {
     setupTabRouting();
 
-    // Ждем авторизованного пользователя — auth-overlay покрывает страницу пока нет user.
-    let didLoad = false;
+    // При логине стартуем подписки активного таба. При логауте — отписываемся
+    // и сбрасываем флаги, чтобы при следующем логине подписки переподнялись.
     subscribeToAuth((user) => {
-        if (user && !didLoad) {
-            didLoad = true;
+        if (user) {
             activateTab(getCurrentTabFromHash());
+        } else {
+            stopVideosSubscription();
+            subscribedTabs.clear();
+            allVideosCache = [];
         }
     });
 
-    // Если у пользователя открыто несколько вкладок — освежаем список когда
-    // он возвращается во вкладку (например, после загрузки в админке).
-    document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && loadedTabs.has("videos")) {
-            loadVideos();
+    // Реактивность на изменение профиля (лайки): пере-сортируем список.
+    subscribeToProfile(() => {
+        if (allVideosCache.length > 0) {
+            renderVideos(allVideosCache);
         }
     });
 }
@@ -84,31 +127,34 @@ function activateTab(tabName) {
         s.classList.toggle("tab-section--active", s.dataset.section === tabName)
     );
 
-    if (!loadedTabs.has(tabName)) {
-        loadedTabs.add(tabName);
+    if (!subscribedTabs.has(tabName)) {
+        subscribedTabs.add(tabName);
         loadTabContent(tabName);
     }
 }
 
 function loadTabContent(tabName) {
-    if (tabName === "videos") loadVideos();
+    if (tabName === "videos") startVideosSubscription();
     // books/films пока статичные заглушки, ничего не грузим
 }
 
 // --- Видео ---
 
-async function loadVideos() {
-    try {
-        videosLoadingEl.hidden = false;
-        videosEmptyEl.hidden = true;
-        videosErrorEl.hidden = true;
-        videosTotalEl.hidden = true;
-        foldersSection.hidden = true;
-        standaloneSection.hidden = true;
+function startVideosSubscription() {
+    if (unsubscribeFromVideos) return; // уже подписаны
 
-        const videos = await videosApi.fetchAll();
+    videosLoadingEl.hidden = false;
+    videosEmptyEl.hidden = true;
+    videosErrorEl.hidden = true;
+    videosTotalEl.hidden = true;
+    foldersSection.hidden = true;
+    standaloneSection.hidden = true;
+
+    // onSnapshot вместо одноразового getDocs: первый callback приходит
+    // мгновенно из persistentLocalCache (IndexedDB), потом обновляется
+    // реактивно. Заметно быстрее на повторных заходах и при возврате на вкладку.
+    unsubscribeFromVideos = videosApi.subscribeAll((videos) => {
         allVideosCache = videos;
-
         videosLoadingEl.hidden = true;
 
         if (videos.length === 0) {
@@ -116,19 +162,27 @@ async function loadVideos() {
             standaloneList.innerHTML = "";
             videosEmptyEl.hidden = false;
             videosTotalEl.hidden = true;
+            foldersSection.hidden = true;
+            standaloneSection.hidden = true;
             return;
         }
 
+        videosEmptyEl.hidden = true;
         renderVideos(videos);
-    } catch (err) {
-        console.error(err);
-        videosLoadingEl.hidden = true;
-        videosErrorEl.textContent = `Не удалось загрузить список: ${err.message}`;
-        videosErrorEl.hidden = false;
+    });
+}
+
+function stopVideosSubscription() {
+    if (unsubscribeFromVideos) {
+        unsubscribeFromVideos();
+        unsubscribeFromVideos = null;
     }
 }
 
 function renderVideos(videos) {
+    // Снимаем позицию скролла ДО изменения DOM (innerHTML="" и appendChild сбрасывают scroll).
+    const savedScroll = window.scrollY;
+
     const totalHidden = videos.reduce((n, v) => n + (v.hidden ? 1 : 0), 0);
     let totalText = `${videos.length} видео`;
     if (isAdmin() && totalHidden > 0) {
@@ -153,36 +207,43 @@ function renderVideos(videos) {
         }
     }
 
-    // Папки
+    // Берем актуальный профиль (лайки) для сортировки
+    const profile = getUserProfile();
+    const likedVideosSet = new Set(profile.liked_videos);
+    const likedFoldersSet = new Set(profile.liked_folders);
+
+    // Папки: лайкнутые сверху по алфавиту, нелайкнутые ниже по алфавиту
     foldersList.innerHTML = "";
-    const folderNames = [...folderMap.keys()].sort((a, b) => a.localeCompare(b, "ru"));
+    const folderNames = sortFoldersWithLikes([...folderMap.keys()], likedFoldersSet);
+    const allFolderNames = [...folderMap.keys()].sort((a, b) => a.localeCompare(b, "ru"));
     for (const name of folderNames) {
         const info = folderMap.get(name);
+        // Колбэки больше не передаем — onSnapshot сам обновит UI после
+        // любых админ-операций. existingFolders нужен только для проверки
+        // коллизий имен при переименовании в редакторе.
         foldersList.appendChild(createFolderCard(name, info.count, {
-            onDelete: loadVideos,
-            onRenamed: loadVideos,
-            existingFolders: folderNames,
+            existingFolders: allFolderNames,
             allHidden: info.count > 0 && info.hiddenCount === info.count,
             hasHidden: info.hiddenCount > 0,
-            onHiddenChanged: loadVideos,
         }));
     }
     foldersSection.hidden = folderNames.length === 0;
 
-    // Одиночные видео
+    // Одиночные видео: лайкнутые сверху, внутри — по текущей сортировке
     standaloneList.innerHTML = "";
-    const standaloneSorted = sortVideos(standaloneVideos, currentSort.field, currentSort.dir);
+    const standaloneSorted = sortVideosWithLikes(
+        standaloneVideos, currentSort.field, currentSort.dir, likedVideosSet
+    );
     for (const video of standaloneSorted) {
-        standaloneList.appendChild(createVideoCard(video, {
-            onDelete: loadVideos,
-            onSaved: loadVideos,
-            onHiddenChanged: loadVideos,
-        }));
+        standaloneList.appendChild(createVideoCard(video));
     }
     standaloneSection.hidden = standaloneVideos.length === 0;
 
     // Контрол сортировки монтируем один раз при первом рендере (когда контейнер уже в DOM).
     mountSortControl();
+
+    // Восстанавливаем скролл после изменения DOM.
+    restoreScrollAfterRender(savedScroll);
 }
 
 function mountSortControl() {

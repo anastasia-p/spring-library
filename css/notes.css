@@ -1,0 +1,131 @@
+/* css/notes.css
+ * Секция заметок ниже названия и метаданных видео.
+ * Кнопка добавления находится в controls-stack плеера (как обычный .ctrl-btn).
+ * Стили рассчитаны на темную тему watch.html (без theme.css).
+ */
+
+.notes-section {
+    margin: 24px auto 0;
+    max-width: 960px;
+    color: #fff;
+    font-family: "Onest", system-ui, -apple-system, sans-serif;
+}
+
+.notes-section__header {
+    margin-bottom: 12px;
+}
+
+.notes-section__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.notes-section__count {
+    color: #888;
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.notes-section__empty {
+    color: #888;
+    font-size: 14px;
+    padding: 16px;
+    text-align: center;
+    border: 1px dashed #333;
+    border-radius: 10px;
+}
+
+.notes-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.note-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.note-item:hover { background: rgba(255, 255, 255, 0.04); }
+/* Подсветка извне — когда мышь на соответствующей точке таймлайна.
+   Цвет связан с primary, чтобы создать визуальную ассоциацию точка → заметка.
+   Обводка через inset box-shadow вместо outline — не обрезается overflow родителя. */
+.note-item--highlight {
+    background: rgba(2, 149, 222, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(2, 149, 222, 0.5);
+}
+
+.note-item__time {
+    background: none;
+    border: none;
+    color: #0295DE;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 14px;
+    padding: 3px 7px;
+    cursor: pointer;
+    font-weight: 600;
+    flex-shrink: 0;
+    border-radius: 5px;
+    line-height: 1.3;
+    min-width: 56px;
+    text-align: center;
+}
+.note-item__time:hover { background: rgba(2, 149, 222, 0.15); }
+.note-item__time:active { background: rgba(2, 149, 222, 0.25); }
+
+.note-item__text {
+    flex: 1;
+    font-size: 14px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #ddd;
+}
+
+.note-item__actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0.55;
+    flex-shrink: 0;
+    align-self: center;
+    transition: opacity 0.12s ease;
+}
+.note-item:hover .note-item__actions { opacity: 1; }
+
+.note-item__action {
+    background: none;
+    border: none;
+    color: #aaa;
+    padding: 4px;
+    cursor: pointer;
+    border-radius: 5px;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.note-item__action:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.note-item__action:active { background: rgba(255, 255, 255, 0.14); }
+.note-item__action svg { width: 16px; height: 16px; display: block; }
+
+/* мобильные правки: actions всегда видны, чуть плотнее */
+@media (max-width: 600px) {
+    .notes-section { margin: 18px auto 0; }
+    .notes-section__header { margin-bottom: 10px; }
+    .note-item { padding: 5px 6px; gap: 8px; }
+    .note-item__actions { opacity: 1; }
+    .note-item__time { min-width: 50px; font-size: 13px; padding: 3px 6px; }
+    .note-item__text { font-size: 14px; }
+}

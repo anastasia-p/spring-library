@@ -1,8 +1,16 @@
-// Страница плеера: метаданные, кастомные controls, скорость, перемотка, fullscreen, зум, mute.
+// Страница плеера: метаданные, кастомные controls, скорость, перемотка, fullscreen, зум, mute, заметки.
 
-import { subscribeToAuth } from "./firebase.js";
+import {
+    subscribeToAuth,
+    subscribeToProfile,
+    isVideoLiked,
+    toggleVideoLike,
+} from "./firebase.js";
 import { videosApi } from "./data.js";
+import { createFolderIcon } from "./ui.js";
 import { formatDuration, formatBytes, formatDate, getSourceLabel } from "./utils.js";
+import { subscribeToNotes, deleteNote } from "./notes.js";
+import { openNoteEditor } from "./note-editor.js";
 
 const SEEK_STEP = 10;
 const DOUBLE_CLICK_DELAY = 280;
@@ -24,8 +32,6 @@ const sourceLinkEl = document.getElementById("info-source");
 const touchZone = document.getElementById("touch-zone");
 const seekHintLeft = document.getElementById("seek-hint-left");
 const seekHintRight = document.getElementById("seek-hint-right");
-const seekBackBtn = document.getElementById("seek-back-btn");
-const seekFwdBtn = document.getElementById("seek-fwd-btn");
 const fsToggleBtn = document.getElementById("fs-toggle");
 const zoomInBtn = document.getElementById("zoom-in-btn");
 const zoomOutBtn = document.getElementById("zoom-out-btn");
@@ -40,6 +46,7 @@ const timeTotalEl = document.getElementById("time-total");
 const playerControlsEl = document.getElementById("player-controls");
 const controlsStackEl = document.getElementById("controls-stack");
 const backLinkEl = document.getElementById("back-link");
+const likeBtnEl = document.getElementById("like-btn");
 const playlistEl = document.getElementById("info-playlist");
 const playlistPrevEl = document.getElementById("playlist-prev");
 const playlistNextEl = document.getElementById("playlist-next");
@@ -50,6 +57,16 @@ const btnMarkA = document.getElementById("btn-mark-a");
 const btnMarkB = document.getElementById("btn-mark-b");
 const markDotA = document.getElementById("mark-dot-a");
 const markDotB = document.getElementById("mark-dot-b");
+
+// --- Заметки ---
+const notesSectionEl = document.getElementById("notes-section");
+const notesListEl = document.getElementById("notes-list");
+const notesEmptyEl = document.getElementById("notes-empty");
+const notesCountEl = document.getElementById("notes-count");
+const addNoteBtnEl = document.getElementById("add-note-btn");
+
+const NOTE_PENCIL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
+const NOTE_TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>`;
 
 const PLAYBACK_OPTS_KEY = "spring_library_playback_opts";
 const ACTIVE_CLASS = "ctrl-btn--active";
@@ -99,6 +116,11 @@ let pendingAutoplay = false;
 let markA = null;
 let markB = null;
 
+// Заметки: активная подписка onSnapshot и последний снимок списка.
+// При смене видео в плейлисте подписка пере-устанавливается на новый videoId.
+let unsubscribeNotes = null;
+let currentNotes = [];
+
 async function init() {
     if (!videoId) {
         showError("В URL не указан id видео");
@@ -114,6 +136,8 @@ async function init() {
         setupZoom();
         setupInteractions();
         setupPlaybackOptions();
+        setupLikeButton();
+        setupAddNoteButton();
 
         await loadVideo(videoId, false);
 
@@ -147,6 +171,40 @@ function setupPlaybackOptions() {
 
     btnMarkA.addEventListener("click", () => setMark("A"));
     btnMarkB.addEventListener("click", () => setMark("B"));
+}
+
+// --- Лайк --------------------------------------------------------------
+// Состояние сердечка обновляется в двух случаях:
+//   1) при смене видео (loadVideo) — у нового видео свое состояние лайка
+//   2) при изменении профиля через subscribeToProfile — тот же видео-id,
+//      но лайк мог быть переключен (например, из другой вкладки)
+
+function setupLikeButton() {
+    likeBtnEl.addEventListener("click", async () => {
+        if (!videoId) return;
+        likeBtnEl.disabled = true;
+        try {
+            await toggleVideoLike(videoId);
+        } catch (err) {
+            console.error("Ошибка лайка:", err);
+            alert(`Не удалось обновить лайк: ${err.message}`);
+        } finally {
+            likeBtnEl.disabled = false;
+        }
+    });
+
+    // Реактивность — Firestore SDK обновит локальный кеш и onSnapshot
+    // стрельнет подпиской профиля. UI отреагирует автоматически.
+    subscribeToProfile(updateLikeButton);
+}
+
+function updateLikeButton() {
+    if (!videoId) return;
+    const liked = isVideoLiked(videoId);
+    likeBtnEl.classList.toggle("like-btn--active", liked);
+    const newTitle = liked ? "Убрать лайк" : "Лайк";
+    likeBtnEl.title = newTitle;
+    likeBtnEl.setAttribute("aria-label", newTitle);
 }
 
 function setMark(which) {
@@ -204,26 +262,197 @@ function updateMarkDot(dotEl, markValue, duration) {
     }
 }
 
-async function loadVideo(id, autoplay) {
-    const video = await videosApi.fetchOne(id);
-    if (!video) {
-        showError("Видео не найдено");
+// --- Заметки -----------------------------------------------------------
+// Подписка через onSnapshot живет на протяжении страницы. При смене видео
+// в плейлисте старая подписка отменяется внутри subscribeToNotes (модуль
+// держит ровно одну активную подписку).
+
+function setupAddNoteButton() {
+    addNoteBtnEl.addEventListener("click", () => {
+        if (!videoId) return;
+        // Пауза видео — момент не уезжает пока пишется текст
+        try { videoEl.pause(); } catch (_e) { /* ignore */ }
+        const time = Math.max(0, videoEl.currentTime || 0);
+        openNoteEditor({ videoId, time });
+    });
+}
+
+// Аналог formatDuration для таймстемпов заметок, выровнен по виду с заголовком
+// модала редактора. Возвращает "1:23" или "1:23:45".
+function formatNoteTime(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+function seekTo(seconds) {
+    const target = Math.max(0, Number(seconds) || 0);
+    // Если метаданные еще не подтянулись — отложим до loadedmetadata.
+    // На практике юзер кликает по таймстемпу когда видео уже играло,
+    // но если кликнул прямо после смены видео в плейлисте — защита нужна.
+    if (videoEl.readyState < 1) {
+        const onReady = () => {
+            const dur = videoEl.duration || 0;
+            videoEl.currentTime = dur > 0 ? Math.min(target, dur) : target;
+            videoEl.removeEventListener("loadedmetadata", onReady);
+        };
+        videoEl.addEventListener("loadedmetadata", onReady);
         return;
     }
+    const dur = videoEl.duration || 0;
+    videoEl.currentTime = dur > 0 ? Math.min(target, dur) : target;
+}
+
+function renderNotes() {
+    notesSectionEl.hidden = false;
+
+    if (currentNotes.length === 0) {
+        notesListEl.replaceChildren();
+        notesEmptyEl.hidden = false;
+        notesCountEl.textContent = "";
+        renderNoteMarks();
+        return;
+    }
+
+    notesEmptyEl.hidden = true;
+    notesCountEl.textContent = ` · ${currentNotes.length}`;
+    notesListEl.replaceChildren(...currentNotes.map(createNoteItem));
+    renderNoteMarks();
+}
+
+// Желтые точки на таймлайне в позициях заметок.
+// При hover на точку подсвечивается соответствующая заметка в списке —
+// чтобы сразу было видно, какая заметка стоит на этом моменте видео.
+// Пере-рендериваются при изменении списка и при loadedmetadata (когда становится
+// известна duration). Обработчики каждый раз вешаются на новые элементы — это ок,
+// потому что точки тоже создаются заново.
+function renderNoteMarks() {
+    const wrap = document.querySelector(".pc-timeline-wrap");
+    if (!wrap) return;
+
+    // Удаляем старые точки
+    wrap.querySelectorAll(".note-mark").forEach((el) => el.remove());
+
+    const duration = videoEl.duration || 0;
+    if (duration <= 0 || currentNotes.length === 0) return;
+
+    for (const note of currentNotes) {
+        const t = Number(note.time) || 0;
+        if (!isFinite(t) || t < 0 || t > duration) continue;
+        const dot = document.createElement("div");
+        dot.className = "note-mark";
+        dot.dataset.noteId = note.id;
+        dot.style.left = `${(t / duration) * 100}%`;
+        if (note.text) dot.title = note.text;
+
+        dot.addEventListener("mouseenter", () => highlightNoteInList(note.id, true));
+        dot.addEventListener("mouseleave", () => highlightNoteInList(note.id, false));
+
+        wrap.appendChild(dot);
+    }
+}
+
+function highlightNoteInList(noteId, on) {
+    const item = notesListEl.querySelector(`.note-item[data-note-id="${noteId}"]`);
+    if (!item) return;
+    item.classList.toggle("note-item--highlight", on);
+}
+
+function createNoteItem(note) {
+    const li = document.createElement("li");
+    li.className = "note-item";
+    li.dataset.noteId = note.id;
+
+    const timeBtn = document.createElement("button");
+    timeBtn.type = "button";
+    timeBtn.className = "note-item__time";
+    timeBtn.textContent = formatNoteTime(note.time);
+    timeBtn.title = "Перейти к моменту";
+    timeBtn.addEventListener("click", () => seekTo(note.time));
+
+    const textEl = document.createElement("div");
+    textEl.className = "note-item__text";
+    textEl.textContent = note.text || "";
+
+    const actions = document.createElement("div");
+    actions.className = "note-item__actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "note-item__action";
+    editBtn.title = "Редактировать";
+    editBtn.setAttribute("aria-label", "Редактировать заметку");
+    editBtn.innerHTML = NOTE_PENCIL_SVG;
+    editBtn.addEventListener("click", () => {
+        openNoteEditor({
+            videoId,
+            time: note.time,
+            note: { id: note.id, text: note.text, time: note.time },
+        });
+    });
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "note-item__action";
+    delBtn.title = "Удалить";
+    delBtn.setAttribute("aria-label", "Удалить заметку");
+    delBtn.innerHTML = NOTE_TRASH_SVG;
+    delBtn.addEventListener("click", async () => {
+        if (!confirm("Удалить заметку?")) return;
+        try {
+            await deleteNote(note.id);
+        } catch (err) {
+            console.error("[watch] delete note failed:", err);
+            alert(err?.message || "Не удалось удалить заметку");
+        }
+    });
+
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+
+    li.appendChild(timeBtn);
+    li.appendChild(textEl);
+    li.appendChild(actions);
+    return li;
+}
+
+async function loadVideo(id, autoplay) {
     videoId = id;
 
     // Метки живут только в рамках одного видео — при смене сбрасываем
     markA = null;
     markB = null;
 
-    renderInfo(video);
+    // Заметки: пере-подписываемся на новый videoId. subscribeToNotes сам
+    // отменит предыдущую подписку. До прихода первого снимка показываем
+    // пустой список — это нормально, длится миллисекунды.
+    currentNotes = [];
+    renderNotes();
+    unsubscribeNotes = subscribeToNotes(id, (list) => {
+        currentNotes = list;
+        renderNotes();
+    });
 
-    // Сохраняем текущую скорость, чтобы применить после loadedmetadata.
+    // Сразу запускаем стрим — endpoint /stream/{id} в бэке публичный,
+    // ему не нужен auth-токен. Метаданные грузятся параллельно через fetchOne,
+    // что заметно ускоряет старт воспроизведения.
     pendingPlaybackRate = videoEl.playbackRate || 1;
     pendingAutoplay = !!autoplay;
-
     videoEl.src = videosApi.streamUrl(id);
     videoEl.load();
+
+    // Параллельно — метаданные для UI (title, meta, folder, плейлист).
+    const video = await videosApi.fetchOne(id);
+    if (!video) {
+        showError("Видео не найдено");
+        return;
+    }
+
+    renderInfo(video);
+    updateLikeButton();
 
     document.title = `${video.title || "Без названия"} — Spring Library`;
 
@@ -301,12 +530,24 @@ function renderPlaylistNav() {
 
 function renderInfo(video) {
     titleEl.textContent = video.title || "(без названия)";
-    const metaParts = [];
-    if (video.duration_sec != null) metaParts.push(formatDuration(video.duration_sec));
-    if (video.file_size_bytes) metaParts.push(formatBytes(video.file_size_bytes));
-    if (video.recorded_at) metaParts.push(`Запись: ${formatDate(video.recorded_at)}`);
-    if (video.folder) metaParts.push(`📁 ${video.folder}`);
-    metaEl.textContent = metaParts.join(" · ");
+
+    // meta строится через DOM, потому что для папки нужна SVG-иконка
+    // (textContent с эмодзи отказались — нужен единый цвет с эмблемы школы).
+    metaEl.replaceChildren();
+    const textParts = [];
+    if (video.duration_sec != null) textParts.push(formatDuration(video.duration_sec));
+    if (video.file_size_bytes) textParts.push(formatBytes(video.file_size_bytes));
+    if (video.recorded_at) textParts.push(`Запись: ${formatDate(video.recorded_at)}`);
+    if (textParts.length > 0) {
+        metaEl.appendChild(document.createTextNode(textParts.join(" · ")));
+    }
+    if (video.folder) {
+        if (textParts.length > 0) {
+            metaEl.appendChild(document.createTextNode(" · "));
+        }
+        metaEl.appendChild(createFolderIcon());
+        metaEl.appendChild(document.createTextNode(video.folder));
+    }
 
     if (video.source_url) {
         sourceLinkEl.href = video.source_url;
@@ -360,6 +601,8 @@ function setupPlayer() {
         }
         // Пересчет градиента таймлайна с актуальной duration
         updateMarksUI();
+        // И точки заметок — раньше duration могла быть 0, теперь есть
+        renderNoteMarks();
     });
 
     videoEl.addEventListener("timeupdate", () => {
@@ -434,9 +677,6 @@ function applySpeedUI(rate) {
 }
 
 function setupSeekControls() {
-    seekBackBtn.addEventListener("click", () => seek(-SEEK_STEP));
-    seekFwdBtn.addEventListener("click", () => seek(SEEK_STEP));
-
     document.addEventListener("keydown", (event) => {
         if (event.target.matches("input, textarea")) return;
         if (event.code === "ArrowLeft") {

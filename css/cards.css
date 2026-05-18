@@ -27,15 +27,37 @@
 }
 
 .card--folder {
-    /* Папки — плитка как было раньше */
-    grid-column: auto;
-    flex-direction: column;
-    padding: 16px;
+    /* Папка — компактная полоса на всю ширину сетки (наследует grid-column: 1/-1 от .card).
+       flex-direction: row тоже унаследовано. Title и meta идут рядом,
+       admin-actions прижаты к правому краю (через margin-left: auto),
+       сердечко в правом верхнем углу через absolute. */
+    padding: 12px;
+    padding-right: 48px; /* резерв под сердечко справа */
+    align-items: center;
+    gap: 8px;
 }
 
 .card--folder .card__title {
-    /* Резерв справа (под edit/delete у видео) не нужен — у папки этих кнопок нет */
+    /* Убираем bottom-отступ и общий резерв под сердечко (он теперь на уровне card),
+       включаем text-overflow для длинных названий. */
     padding-right: 0;
+    margin-bottom: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.card--folder .card__meta {
+    /* Не растягивается — прижата к названию папки. */
+    flex: 0 0 auto;
+    font-size: 13px;
+}
+
+.card--folder .card__actions {
+    /* Прижимается к правому краю (до padding-right под сердечко). */
+    margin-left: auto;
 }
 
 .card__thumb {
@@ -80,7 +102,7 @@
     font-weight: 500;
     margin-bottom: 6px;
     color: var(--text);
-    padding-right: 80px;
+    padding-right: 36px;
 }
 
 .card__description {
@@ -94,14 +116,11 @@
     overflow: hidden;
 }
 
+/* Source-линка теперь inline внутри строки метаданных (.card__meta).
+   Раньше лежала в правом верхнем углу карточки через position: absolute. */
 .card__source {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    font-size: 12px;
     color: var(--green);
     text-decoration: none;
-    z-index: 1;
 }
 
 .card__source:hover {
@@ -179,6 +198,63 @@
     width: 18px;
     height: 18px;
     display: block;
+}
+
+/* --- Сердечко (лайк) ---
+ * Видео: в правом верхнем углу .card__thumb (поверх превью).
+ * Папка: в правом верхнем углу .card (нет превью).
+ * Полупрозрачная подложка нужна, чтобы иконка читалась на превью любого цвета. */
+
+.card__like {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: rgba(255, 255, 255, 0.85);
+    border: none;
+    border-radius: 50%;
+    color: var(--text-hint);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s, transform 0.1s;
+    font-family: inherit;
+    z-index: 2;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.card__like svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    fill: none;
+}
+
+.card__like:hover {
+    color: var(--like);
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.card__like:active {
+    transform: scale(0.92);
+}
+
+.card__like:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.card__like--active {
+    color: var(--like);
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.card__like--active svg {
+    fill: currentColor;
 }
 
 /* Мобильная адаптация — превью уже */
