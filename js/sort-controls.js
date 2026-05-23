@@ -36,7 +36,7 @@ function saveSort(sort) {
  * field: "name" | "date"
  * dir:   "asc"  | "desc"
  * Для "date" используется recorded_at (если есть), иначе fallback на uploaded_at.
- * recorded_at — строка YYYY-MM-DD; uploaded_at — Firestore Timestamp.
+ * recorded_at — строка YYYY-MM-DD; uploaded_at — ISO-строка (UTC).
  */
 export function sortVideos(videos, field, dir) {
     const sign = dir === "desc" ? -1 : 1;
@@ -103,9 +103,9 @@ function videoDateMillis(v) {
         if (!isNaN(t)) return t;
     }
     if (v.uploaded_at) {
-        // Firestore Timestamp при чтении через JS SDK
-        if (typeof v.uploaded_at.toMillis === "function") return v.uploaded_at.toMillis();
-        if (typeof v.uploaded_at.seconds === "number") return v.uploaded_at.seconds * 1000;
+        // uploaded_at теперь ISO-строка (UTC) из локального бэка
+        const t = new Date(v.uploaded_at).getTime();
+        if (!isNaN(t)) return t;
     }
     return 0;
 }

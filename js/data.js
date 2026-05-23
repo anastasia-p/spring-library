@@ -1,18 +1,14 @@
-// API-слой. Сгруппирован по типам контента — videosApi, в перспективе booksApi / filmsApi.
-// Снаружи никто не должен импортировать firebase-firestore — только через объекты-API ниже.
-
-import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    onSnapshot,
-    query,
-    where,
-} from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+// API-слой. Сгруппирован по типам контента — videosApi (+ заглушки books/films).
+//
+// Раньше тут жил клиентский Firestore SDK. Теперь — обычный fetch в локальный
+// бэкенд. Чтобы не трогать потребителей (index.js, folder.js), сохранен
+// «наблюдаемый» интерфейс: subscribeAll/subscribeInFolder регистрируют слушателя,
+// а любая мутация (delete/update/upload/hidden/folder ops) дергает refreshVideos()
+// — перезапрос всех видео и оповещение слушателей. Для одного пользователя на
+// одной вкладке это полностью заменяет realtime от onSnapshot.
 
 import { API_BASE_URL } from "./config.js";
-import { db, getCurrentUser, isAdmin } from "./firebase.js";
+import { isAdmin } from "./firebase.js";
 
 function sortByTitle(a, b) {
     const ta = (a.title || "").trim();
@@ -20,11 +16,51 @@ function sortByTitle(a, b) {
     return ta.localeCompare(tb, "ru", { sensitivity: "base", numeric: true });
 }
 
-// Фильтрация скрытых: обычный пользователь не видит видео с hidden === true.
-// Админ видит все. Это UX-фильтр, не security — документы доступны через Firestore SDK напрямую.
+// Обычный пользователь не видит hidden-видео. isAdmin() сейчас всегда true
+// (один пользователь), так что фильтр фактически пропускает все.
 function filterVisible(list) {
     if (isAdmin()) return list;
     return list.filter((v) => !v.hidden);
+}
+
+async function apiGet(path) {
+    const res = await fetch(`${API_BASE_URL}${path}`);
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка ${res.status}`);
+    }
+    return res.json();
+}
+
+async function apiSend(path, method, formData) {
+    const res = await fetch(`${API_BASE_URL}${path}`, { method, body: formData });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка ${res.status}`);
+    }
+    return res.json();
+}
+
+// --- Наблюдаемый слой видео -------------------------------------------------
+
+let videosCache = null;       // последний полный список с сервера (или null)
+const videoSubs = new Set();  // { folder: string|null, cb }
+
+function notifyVideoSub(sub) {
+    if (videosCache === null) return;
+    const scoped = sub.folder == null
+        ? videosCache
+        : videosCache.filter((v) => v.folder === sub.folder);
+    sub.cb(filterVisible(scoped).slice().sort(sortByTitle));
+}
+
+function notifyAllVideoSubs() {
+    for (const sub of videoSubs) notifyVideoSub(sub);
+}
+
+async function refreshVideos() {
+    videosCache = await apiGet("/api/videos");
+    notifyAllVideoSubs();
 }
 
 // --- Видео ------------------------------------------------------------------
@@ -33,93 +69,61 @@ export const videosApi = {
     collectionName: "videos",
 
     async fetchAll() {
-        const snapshot = await getDocs(collection(db, this.collectionName));
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        return filterVisible(list).sort((a, b) => sortByTitle(a, b));
+        const list = await apiGet("/api/videos");
+        return filterVisible(list).slice().sort(sortByTitle);
     },
 
     /**
-     * Подписка на коллекцию videos. Callback вызывается на каждое изменение.
-     * Возвращает функцию отписки.
+     * Подписка на все видео. Колбэк вызывается сразу (если кеш есть), затем
+     * после каждой мутации. Возвращает функцию отписки.
      */
     subscribeAll(callback) {
-        return onSnapshot(collection(db, this.collectionName), (snapshot) => {
-            const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-            callback(filterVisible(list).sort((a, b) => sortByTitle(a, b)));
-        });
+        const sub = { folder: null, cb: callback };
+        videoSubs.add(sub);
+        if (videosCache !== null) notifyVideoSub(sub);
+        refreshVideos().catch((e) => console.error("Ошибка загрузки видео:", e));
+        return () => videoSubs.delete(sub);
     },
 
     async fetchOne(id) {
-        const docSnap = await getDoc(doc(db, this.collectionName, id));
-        if (!docSnap.exists()) return null;
-        return { id: docSnap.id, ...docSnap.data() };
-    },
-
-    async fetchInFolder(folderName) {
-        const q = query(
-            collection(db, this.collectionName),
-            where("folder", "==", folderName)
-        );
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-        return filterVisible(list).sort((a, b) => sortByTitle(a, b));
-    },
-
-    /**
-     * Подписка на видео внутри папки. Callback вызывается на каждое изменение.
-     * Возвращает функцию отписки.
-     */
-    subscribeInFolder(folderName, callback) {
-        const q = query(
-            collection(db, this.collectionName),
-            where("folder", "==", folderName)
-        );
-        return onSnapshot(q, (snapshot) => {
-            const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-            callback(filterVisible(list).sort((a, b) => sortByTitle(a, b)));
-        });
-    },
-
-    async fetchFolderNames() {
-        const snapshot = await getDocs(collection(db, this.collectionName));
-        const admin = isAdmin();
-        const folders = new Set();
-        snapshot.forEach((d) => {
-            const data = d.data();
-            if (!data.folder) return;
-            if (!admin && data.hidden) return; // папка появляется только если есть видимое видео
-            folders.add(data.folder);
-        });
-        return [...folders].sort((a, b) => a.localeCompare(b, "ru"));
-    },
-
-    async delete(id) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-        const response = await fetch(`${API_BASE_URL}/api/videos/${id}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Ошибка ${response.status}`);
+        try {
+            return await apiGet(`/api/videos/${encodeURIComponent(id)}`);
+        } catch {
+            return null; // 404 или сетевая ошибка → null (как прежний fetchOne)
         }
     },
 
-    // Специфично для видео:
+    async fetchInFolder(folderName) {
+        const list = await apiGet(`/api/videos?folder=${encodeURIComponent(folderName)}`);
+        return filterVisible(list).slice().sort(sortByTitle);
+    },
+
+    /**
+     * Подписка на видео внутри папки. Поведение как у subscribeAll, но список
+     * отфильтрован по folder. Возвращает функцию отписки.
+     */
+    subscribeInFolder(folderName, callback) {
+        const sub = { folder: folderName, cb: callback };
+        videoSubs.add(sub);
+        if (videosCache !== null) notifyVideoSub(sub);
+        refreshVideos().catch((e) => console.error("Ошибка загрузки видео:", e));
+        return () => videoSubs.delete(sub);
+    },
+
+    async fetchFolderNames() {
+        return apiGet("/api/folders");
+    },
+
+    async delete(id) {
+        await apiSend(`/api/videos/${encodeURIComponent(id)}`, "DELETE");
+        await refreshVideos();
+    },
 
     async upload(formData, onProgress, signal) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open("POST", `${API_BASE_URL}/api/upload`);
-            xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
-            // Если передан AbortSignal — даём ему ABORT-ить XHR
             if (signal) {
                 if (signal.aborted) {
                     xhr.abort();
@@ -129,7 +133,6 @@ export const videosApi = {
                 signal.addEventListener("abort", () => xhr.abort());
             }
 
-            // Сглаживаем расчёт скорости — обновляемся раз в ~300мс
             let lastTime = Date.now();
             let lastLoaded = 0;
             let speed = 0;
@@ -144,18 +147,15 @@ export const videosApi = {
                     lastLoaded = event.loaded;
                 }
                 const eta = speed > 0 ? (event.total - event.loaded) / speed : 0;
-                onProgress({
-                    downloaded: event.loaded,
-                    total: event.total,
-                    speed,
-                    eta,
-                });
+                onProgress({ downloaded: event.loaded, total: event.total, speed, eta });
             });
 
             xhr.addEventListener("load", () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     try {
-                        resolve(JSON.parse(xhr.responseText));
+                        const data = JSON.parse(xhr.responseText);
+                        refreshVideos().catch(() => {});
+                        resolve(data);
                     } catch {
                         reject(new Error("Ошибка парсинга ответа"));
                     }
@@ -179,24 +179,18 @@ export const videosApi = {
     },
 
     /**
-     * Скачать видео по URL через бэкенд (yt-dlp).
-     * Возвращает финальный объект видео (event с типом "done").
-     * onEvent({type, ...}) вызывается на каждое событие стрима: progress, status, heartbeat.
-     * При дубликате source_url — бросает Error с .duplicateId.
+     * Скачать видео по URL через бэкенд (yt-dlp). NDJSON-стрим.
+     * Возвращает финальный объект (событие "done"). onEvent — на каждое событие.
+     * При дубликате source_url — Error с .duplicateId.
      */
     async uploadFromUrl(formData, onEvent, signal) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
         const response = await fetch(`${API_BASE_URL}/api/upload-from-url`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
             body: formData,
             signal,
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
-            // 409 — дубликат: detail = { message, id }
             if (response.status === 409 && typeof err.detail === "object" && err.detail?.id) {
                 const dupErr = new Error(err.detail.message || "Видео уже загружено");
                 dupErr.duplicateId = err.detail.id;
@@ -208,7 +202,6 @@ export const videosApi = {
             throw new Error(detail || `Ошибка сервера: ${response.status}`);
         }
 
-        // Читаем NDJSON-стрим
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -242,6 +235,7 @@ export const videosApi = {
         if (!finalEvent) {
             throw new Error("Скачивание прервалось без результата");
         }
+        refreshVideos().catch(() => {});
         return finalEvent;
     },
 
@@ -254,139 +248,61 @@ export const videosApi = {
     },
 
     async setThumbOffsetY(id, offsetY) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-        const formData = new FormData();
-        formData.append("thumb_offset_y", String(offsetY));
-        const response = await fetch(`${API_BASE_URL}/api/videos/${id}/thumbnail`, {
-            method: "PATCH",
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData,
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Ошибка ${response.status}`);
-        }
-        return response.json();
+        const fd = new FormData();
+        fd.append("thumb_offset_y", String(offsetY));
+        const data = await apiSend(`/api/videos/${encodeURIComponent(id)}/thumbnail`, "PATCH", fd);
+        await refreshVideos();
+        return data;
     },
 
-    /**
-     * Обновить редактируемые поля видео (title, description, folder, recorded_at, thumb_offset_y).
-     */
     async update(id, data) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-        const formData = new FormData();
-        formData.append("title", data.title);
-        formData.append("description", data.description || "");
-        formData.append("folder", data.folder || "");
-        formData.append("recorded_at", data.recorded_at || "");
-        formData.append("thumb_offset_y", String(
+        const fd = new FormData();
+        fd.append("title", data.title);
+        fd.append("description", data.description || "");
+        fd.append("folder", data.folder || "");
+        fd.append("recorded_at", data.recorded_at || "");
+        fd.append("thumb_offset_y", String(
             typeof data.thumb_offset_y === "number" ? data.thumb_offset_y : 50
         ));
-        const response = await fetch(`${API_BASE_URL}/api/videos/${id}`, {
-            method: "PATCH",
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData,
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Ошибка ${response.status}`);
-        }
-        return response.json();
+        const result = await apiSend(`/api/videos/${encodeURIComponent(id)}`, "PATCH", fd);
+        await refreshVideos();
+        return result;
     },
-    /**
-     * Удаляет папку целиком — все видео внутри + файлы/превью.
-     */
+
     async deleteFolder(folderName) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-        const response = await fetch(
-            `${API_BASE_URL}/api/folders/${encodeURIComponent(folderName)}`,
-            {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-            }
+        const result = await apiSend(
+            `/api/folders/${encodeURIComponent(folderName)}`, "DELETE"
         );
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Ошибка ${response.status}`);
-        }
-        return response.json();
+        await refreshVideos();
+        return result;
     },
 
-    /**
-     * Переименовывает папку — у всех видео внутри обновляется поле folder.
-     * Если newName совпадает с существующей папкой, бэк не блокирует (это слияние).
-     * Защиту от случайного слияния делает фронт (confirm в editor).
-     */
     async renameFolder(folderName, newName) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-        const formData = new FormData();
-        formData.append("new_name", newName);
-        const response = await fetch(
-            `${API_BASE_URL}/api/folders/${encodeURIComponent(folderName)}`,
-            {
-                method: "PATCH",
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-            }
+        const fd = new FormData();
+        fd.append("new_name", newName);
+        const result = await apiSend(
+            `/api/folders/${encodeURIComponent(folderName)}`, "PATCH", fd
         );
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Ошибка ${response.status}`);
-        }
-        return response.json();
+        await refreshVideos();
+        return result;
     },
 
-    /**
-     * Переключает скрытость одного видео.
-     */
     async setHidden(id, hidden) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-        const formData = new FormData();
-        formData.append("hidden", String(hidden));
-        const response = await fetch(`${API_BASE_URL}/api/videos/${id}/hidden`, {
-            method: "PATCH",
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData,
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Ошибка ${response.status}`);
-        }
-        return response.json();
+        const fd = new FormData();
+        fd.append("hidden", String(hidden));
+        const result = await apiSend(`/api/videos/${encodeURIComponent(id)}/hidden`, "PATCH", fd);
+        await refreshVideos();
+        return result;
     },
 
-    /**
-     * Массово переключает скрытость всех видео в папке.
-     */
     async setFolderHidden(folderName, hidden) {
-        const user = getCurrentUser();
-        if (!user) throw new Error("Не авторизован");
-        const token = await user.getIdToken();
-        const formData = new FormData();
-        formData.append("hidden", String(hidden));
-        const response = await fetch(
-            `${API_BASE_URL}/api/folders/${encodeURIComponent(folderName)}/hidden`,
-            {
-                method: "PATCH",
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-            }
+        const fd = new FormData();
+        fd.append("hidden", String(hidden));
+        const result = await apiSend(
+            `/api/folders/${encodeURIComponent(folderName)}/hidden`, "PATCH", fd
         );
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || `Ошибка ${response.status}`);
-        }
-        return response.json();
+        await refreshVideos();
+        return result;
     },
 };
 

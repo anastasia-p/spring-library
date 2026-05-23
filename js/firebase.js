@@ -1,231 +1,139 @@
-// Инициализация Firebase + общие auth-функции + слой профиля пользователя (лайки).
-// Без анонимного входа: страницы доступны только после явной авторизации.
+// Локальный слой «авторизации» и лайков.
+//
+// Имя файла историческое: Firebase удален полностью. Приложение
+// однопользовательское и работает на localhost, поэтому авторизации нет —
+// есть один локальный «пользователь», и ему можно все. Данные (лайки)
+// ходят в локальный бэкенд через fetch.
+//
+// Интерфейс модуля сохранен 1-в-1 с прежним (subscribeToAuth, isAdmin,
+// getUserProfile, subscribeToProfile, isVideoLiked/isFolderLiked,
+// toggleVideoLike/toggleFolderLike, getCurrentUser), чтобы потребители
+// (ui.js, index.js, folder.js, watch.js) не пришлось трогать.
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-import {
-    getAuth,
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    sendPasswordResetEmail,
-    signOut,
-    onAuthStateChanged,
-} from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
-import {
-    getFirestore,
-    initializeFirestore,
-    persistentLocalCache,
-    persistentMultipleTabManager,
-    doc,
-    setDoc,
-    onSnapshot,
-    arrayUnion,
-    arrayRemove,
-} from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { API_BASE_URL } from "./config.js";
 
-import { firebaseConfig, ADMIN_EMAIL } from "./config.js";
-
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-
-// Локальный кеш Firestore в IndexedDB. Мгновенный отклик при повторных заходах,
-// обновления в фоне. persistentMultipleTabManager синхронизирует вкладки.
-try {
-    initializeFirestore(app, {
-        localCache: persistentLocalCache({
-            tabManager: persistentMultipleTabManager(),
-        }),
-    });
-} catch (e) {
-    // Уже инициализирован (горячая перезагрузка) — продолжаем со стандартным экземпляром.
-    console.warn("Firestore уже инициализирован:", e);
-}
-export const db = getFirestore(app);
+// Единственный «пользователь». Все страницы стартуют так, будто кто-то залогинен.
+const LOCAL_USER = { uid: "local", email: "" };
 
 export function getCurrentUser() {
-    return auth.currentUser;
+    return LOCAL_USER;
+}
+
+// Один пользователь = полные права. Раньше отделяло админа от зрителей.
+export function isAdmin() {
+    return true;
 }
 
 /**
- * Админ — пользователь с email, совпадающим с ADMIN_EMAIL из config.js.
- * Можно передать user явно (полезно внутри обработчика onAuthStateChanged),
- * иначе берется auth.currentUser.
- */
-export function isAdmin(user) {
-    const u = user !== undefined ? user : auth.currentUser;
-    return !!u && u.email === ADMIN_EMAIL;
-}
-
-/**
- * Подписка на изменения состояния аутентификации.
- * Callback вызывается с user (User | null) сразу после подписки и на каждое изменение.
- * Возвращает функцию отписки.
+ * Подписка на «состояние аутентификации». Сразу отдает локального пользователя
+ * (auth нет), чтобы все подписки на данные запустились. Возвращает no-op отписку.
  */
 export function subscribeToAuth(callback) {
-    return onAuthStateChanged(auth, callback);
+    callback(LOCAL_USER);
+    return () => {};
 }
 
-export async function loginWithEmail(email, password) {
-    const result = await signInWithEmailAndPassword(auth, email, password);
-    return result.user;
-}
+// --- Лайки (глобальные, без uid) -------------------------------------------
+// Кеш в памяти + слушатели. Грузим один раз с бэка при старте модуля.
+// Toggle — оптимистично: меняем кеш и оповещаем сразу, при ошибке откатываем.
 
-export async function registerWithEmail(email, password) {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    return result.user;
-}
-
-export async function sendPasswordReset(email) {
-    await sendPasswordResetEmail(auth, email);
-}
-
-export async function logout() {
-    await signOut(auth);
-}
-
-/**
- * Понятные сообщения об ошибках Firebase Auth.
- */
-export function getAuthErrorMessage(code) {
-    const messages = {
-        "auth/user-not-found":         "Неверный email или пароль",
-        "auth/wrong-password":         "Неверный email или пароль",
-        "auth/invalid-credential":     "Неверный email или пароль",
-        "auth/internal-error":         "Неверный email или пароль",
-        "auth/invalid-email":          "Неверный формат email",
-        "auth/email-already-in-use":   "Этот email уже зарегистрирован",
-        "auth/weak-password":          "Пароль слишком короткий — минимум 6 символов",
-        "auth/too-many-requests":      "Слишком много попыток. Попробуй позже",
-        "auth/network-request-failed": "Ошибка сети. Проверь подключение",
-        "auth/operation-not-allowed":  "Email/Password не включен в Firebase Console",
-        "auth/user-disabled":          "Аккаунт заблокирован",
-    };
-    return messages[code] || "Что-то пошло не так. Попробуй еще раз";
-}
-
-// --- Профиль пользователя (лайки) -------------------------------------------
-// Документ user_profiles/{uid} с массивами liked_videos и liked_folders.
-// Кеш в памяти + единая подписка на onSnapshot. UI-компоненты подписываются
-// на наши локальные события через subscribeToProfile — это дешевле, чем
-// каждому компоненту подписываться на Firestore отдельно.
-// Toggle идет прямой записью в Firestore (правила разрешают пользователю
-// писать только в свой документ). Optimistic update получаем бесплатно
-// от Firestore SDK через локальный кеш + onSnapshot.
-
-const EMPTY_PROFILE = { liked_videos: [], liked_folders: [] };
-let userProfileCache = EMPTY_PROFILE;
-let unsubscribeFromProfile = null;
+let profileCache = { liked_videos: [], liked_folders: [] };
 const profileListeners = new Set();
 
-function notifyProfileListeners() {
+function notifyProfile() {
     for (const cb of profileListeners) {
         try {
-            cb(userProfileCache);
+            cb(profileCache);
         } catch (e) {
             console.error("Profile listener error:", e);
         }
     }
 }
 
-function startProfileSubscription(user) {
-    // Сначала отписываемся от предыдущего пользователя, если был
-    if (unsubscribeFromProfile) {
-        unsubscribeFromProfile();
-        unsubscribeFromProfile = null;
+async function loadProfile() {
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/likes`);
+        if (!res.ok) return;
+        const data = await res.json();
+        profileCache = {
+            liked_videos: data.liked_videos || [],
+            liked_folders: data.liked_folders || [],
+        };
+        notifyProfile();
+    } catch (e) {
+        console.warn("Не удалось загрузить лайки:", e);
     }
-    if (!user) {
-        userProfileCache = EMPTY_PROFILE;
-        notifyProfileListeners();
-        return;
-    }
-    const ref = doc(db, "user_profiles", user.uid);
-    unsubscribeFromProfile = onSnapshot(
-        ref,
-        (snap) => {
-            const data = snap.exists() ? (snap.data() || {}) : {};
-            userProfileCache = {
-                liked_videos: data.liked_videos || [],
-                liked_folders: data.liked_folders || [],
-            };
-            notifyProfileListeners();
-        },
-        (err) => {
-            // Не критично — при ошибке оставляем пустой профиль
-            console.warn("Не удалось подписаться на user_profiles:", err);
-            userProfileCache = EMPTY_PROFILE;
-            notifyProfileListeners();
-        }
-    );
 }
 
-// Привязываем подписку к auth state. При логине — подписываемся,
-// при логауте — отписываемся и сбрасываем кеш.
-onAuthStateChanged(auth, (user) => {
-    startProfileSubscription(user);
-});
-
-/**
- * Возвращает текущий профиль пользователя из кеша.
- * Если пользователь не залогинен или документ не существует —
- * возвращает { liked_videos: [], liked_folders: [] }.
- * Синхронная функция, безопасна для использования в рендере.
- */
+/** Синхронно возвращает кеш профиля. Никогда не null. */
 export function getUserProfile() {
-    return userProfileCache;
+    return profileCache;
 }
 
 /**
- * Подписка на изменения профиля. Callback вызывается:
- * - сразу при подписке с текущим состоянием
- * - на каждое изменение (включая логин/логаут и удаленные обновления через onSnapshot)
- * Возвращает функцию отписки.
+ * Подписка на изменения профиля (лайки). Колбэк вызывается сразу с текущим
+ * состоянием и далее при каждом toggle. Возвращает функцию отписки.
  */
 export function subscribeToProfile(callback) {
     profileListeners.add(callback);
-    callback(userProfileCache);
+    callback(profileCache);
     return () => profileListeners.delete(callback);
 }
 
-/**
- * Лайкнуто ли видео (синхронная проверка по кешу).
- */
 export function isVideoLiked(videoId) {
-    return userProfileCache.liked_videos.includes(videoId);
+    return profileCache.liked_videos.includes(videoId);
 }
 
-/**
- * Лайкнута ли папка (синхронная проверка по кешу).
- */
 export function isFolderLiked(folderName) {
-    return userProfileCache.liked_folders.includes(folderName);
+    return profileCache.liked_folders.includes(folderName);
 }
 
-/**
- * Toggle лайка на видео. Прямая запись в Firestore — UI обновится
- * автоматически через onSnapshot. Документ создается при первой записи.
- */
+async function setLike(kind, key, liked) {
+    const path = kind === "video"
+        ? `/api/likes/video/${encodeURIComponent(key)}`
+        : `/api/likes/folder/${encodeURIComponent(key)}`;
+    const fd = new FormData();
+    fd.append("liked", String(liked));
+    const res = await fetch(`${API_BASE_URL}${path}`, { method: "POST", body: fd });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка ${res.status}`);
+    }
+}
+
 export async function toggleVideoLike(videoId) {
-    const user = auth.currentUser;
-    if (!user) throw new Error("Не авторизован");
-    const ref = doc(db, "user_profiles", user.uid);
-    const update = {
-        liked_videos: userProfileCache.liked_videos.includes(videoId)
-            ? arrayRemove(videoId)
-            : arrayUnion(videoId),
+    const next = !isVideoLiked(videoId);
+    const before = profileCache.liked_videos;
+    profileCache = {
+        ...profileCache,
+        liked_videos: next ? [...before, videoId] : before.filter((id) => id !== videoId),
     };
-    await setDoc(ref, update, { merge: true });
+    notifyProfile();
+    try {
+        await setLike("video", videoId, next);
+    } catch (e) {
+        profileCache = { ...profileCache, liked_videos: before };
+        notifyProfile();
+        throw e;
+    }
 }
 
-/**
- * Toggle лайка на папку. Поведение аналогично toggleVideoLike.
- */
 export async function toggleFolderLike(folderName) {
-    const user = auth.currentUser;
-    if (!user) throw new Error("Не авторизован");
-    const ref = doc(db, "user_profiles", user.uid);
-    const update = {
-        liked_folders: userProfileCache.liked_folders.includes(folderName)
-            ? arrayRemove(folderName)
-            : arrayUnion(folderName),
+    const next = !isFolderLiked(folderName);
+    const before = profileCache.liked_folders;
+    profileCache = {
+        ...profileCache,
+        liked_folders: next ? [...before, folderName] : before.filter((n) => n !== folderName),
     };
-    await setDoc(ref, update, { merge: true });
+    notifyProfile();
+    try {
+        await setLike("folder", folderName, next);
+    } catch (e) {
+        profileCache = { ...profileCache, liked_folders: before };
+        notifyProfile();
+        throw e;
+    }
 }
+
+// Грузим лайки при загрузке модуля — значки на карточках появятся, как придут данные.
+loadProfile();

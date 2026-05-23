@@ -1,17 +1,12 @@
-// admin.html — добавление контента. Доступно только админу.
-// Логин/регистрация — общий auth-overlay (см. auth-overlay.js). Logout — в шапке (header.js).
-// Форма минимальная: только источник (файл/URL). Title подставляется автоматически на бэке
-// (из имени файла или yt-dlp), остальные поля дозаполняются в editor, который открывается
-// сразу после успешной загрузки.
+// admin.html — добавление контента.
+// Авторизации больше нет (приложение однопользовательское) — страница доступна
+// сразу, без проверки роли. Форма минимальная: только источник (файл/URL).
+// Title подставляется на бэке (из имени файла или yt-dlp), остальные поля
+// дозаполняются в editor, который открывается сразу после успешной загрузки.
 
-import { subscribeToAuth, isAdmin } from "./firebase.js";
 import { videosApi } from "./data.js";
 import { formatBytes, formatDate } from "./utils.js";
 import { openVideoEditor } from "./editor.js";
-
-// --- Секции страницы ---
-const adminSection = document.getElementById("admin-section");
-const notAdminSection = document.getElementById("not-admin-section");
 
 // --- Внутренние табы (Видео / Книги / Фильмы) ---
 const tabs = document.querySelectorAll(".admin-tab");
@@ -30,35 +25,21 @@ const fileOnlyFields = document.querySelectorAll("[data-source='file']");
 const urlOnlyFields = document.querySelectorAll("[data-source='url']");
 
 let activeUploadController = null;
-let didInit = false;
 
 // --- Прогресс-бар ---
 const progressEl = document.getElementById("progress");
 const progressBar = document.getElementById("progress-bar");
 const progressLabel = document.getElementById("progress-label");
 
-// --- Auth-подписка: показываем admin / not-admin в зависимости от роли ---
-subscribeToAuth((user) => {
-    if (!user) {
-        // auth-overlay покрывает страницу — ничего делать не надо
-        adminSection.hidden = true;
-        notAdminSection.hidden = true;
-        return;
-    }
-    if (isAdmin(user)) {
-        adminSection.hidden = false;
-        notAdminSection.hidden = true;
-        if (!didInit) {
-            didInit = true;
-            initAdmin();
-        }
-    } else {
-        adminSection.hidden = true;
-        notAdminSection.hidden = false;
-    }
-});
-
 function initAdmin() {
+    // Авторизации больше нет. Если в разметке секция формы помечена hidden
+    // (как в исходном admin.html, где ее раскрывал старый auth-код) — раскрываем
+    // ее сами; секцию-заглушку 'не админ', если она есть, прячем.
+    const adminSection = document.getElementById("admin-section");
+    if (adminSection) adminSection.hidden = false;
+    const notAdminSection = document.getElementById("not-admin-section");
+    if (notAdminSection) notAdminSection.hidden = true;
+
     setupTabs();
     setupSourceToggle();
 
@@ -291,4 +272,11 @@ function showStatusWithLink(message, href, linkText, type) {
     link.href = href;
     link.textContent = linkText;
     statusEl.appendChild(link);
+}
+
+// Модуль грузится как type="module" (defer) — DOM уже готов. На всякий случай ждем.
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAdmin);
+} else {
+    initAdmin();
 }

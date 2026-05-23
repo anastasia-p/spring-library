@@ -1,198 +1,107 @@
 // js/notes.js
-// Модуль работы с личными заметками к видео.
+// Модуль личных заметок (таймстемпов) к видео.
 //
-// Архитектура: подколлекция user_profiles/{uid}/notes/{noteId}.
-// Чтение/запись напрямую с клиента через Firestore SDK, Rules защищают
-// принадлежность. Optimistic UI приходит через onSnapshot из persistentLocalCache.
+// Раньше — подколлекция Firestore с onSnapshot. Теперь — fetch в локальный
+// бэкенд. Интерфейс сохранен: subscribeToNotes (плеер), videoHasNotes +
+// subscribeToNotesIndex (значок на карточках), addNote/updateNote/deleteNote.
 //
-// Документ заметки:
-//   videoId: string
-//   time: number (секунды в видео, может быть float)
-//   text: string (1..1000 символов)
-//   createdAt: serverTimestamp
-//   updatedAt: serverTimestamp
-//
-// Две независимые подписки:
-//   1) activeSub  — заметки ОДНОГО видео (плеер). Одна на страницу, пере-создается
-//      на каждый subscribeToNotes. Сортировка по time asc.
-//   2) indexSub   — индекс "в каких видео вообще есть заметки" (для значка на
-//      карточках в списке). Подписка на ВСЮ коллекцию notes юзера, без where.
-//      Держим Set videoId в памяти; videoHasNotes() — синхронный геттер.
-//      Паттерн зеркалит лайки (firebase.js: профиль в памяти + isVideoLiked).
+// «Наблюдаемость» эмулируется: после любой мутации перезапрашиваем заметки
+// активного видео (для плеера) и индекс (для значков) и оповещаем слушателей.
+// Авторизации/uid больше нет — заметки глобальные (один пользователь).
 
-import {
-    collection,
-    query,
-    where,
-    orderBy,
-    onSnapshot,
-    addDoc,
-    updateDoc,
-    deleteDoc,
-    doc,
-    serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-import { db, getCurrentUser, subscribeToAuth } from "./firebase.js";
+import { API_BASE_URL } from "./config.js";
 
 export const MAX_NOTE_TEXT_LENGTH = 1000;
 
-// Текущий uid (актуализируется через subscribeToAuth)
-let currentUid = null;
-
-// Активная подписка плеера: { videoId, callback, unsubscribe }
-let activeSub = null;
-
-// --- Индекс заметок (для значка на карточках) ----------------------------
-// notesIndex — множество videoId, у которых есть хотя бы одна заметка.
-// indexUnsub — отписка от onSnapshot всей коллекции (null = не подписаны).
-// indexCallbacks — слушатели обновления индекса (ui.js перерисовывает значки).
-let notesIndex = new Set();
-let indexUnsub = null;
-const indexCallbacks = new Set();
-
-subscribeToAuth((user) => {
-    const newUid = user?.uid || null;
-    if (newUid === currentUid) return;
-    currentUid = newUid;
-    // Подписка плеера: пере-подписываемся с новым uid
-    if (activeSub) {
-        const { videoId, callback } = activeSub;
-        stopSub();
-        startSub(videoId, callback);
+async function apiGet(path) {
+    const res = await fetch(`${API_BASE_URL}${path}`);
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка ${res.status}`);
     }
-    // Индекс заметок: пере-подписываемся с новым uid (или чистим при выходе),
-    // только если кто-то на него подписан.
-    stopIndexSub();
-    notesIndex = new Set();
-    notifyIndex();
-    if (indexCallbacks.size > 0) {
-        startIndexSub();
-    }
-});
-
-function notesCol(uid) {
-    return collection(db, "user_profiles", uid, "notes");
+    return res.json();
 }
 
-function startSub(videoId, callback) {
-    if (!currentUid) {
-        // Без авторизации — отдаем пустой список и не подписываемся
-        callback([]);
-        activeSub = { videoId, callback, unsubscribe: () => {} };
-        return;
-    }
-    const q = query(
-        notesCol(currentUid),
-        where("videoId", "==", videoId),
-        orderBy("time", "asc"),
-    );
-    const unsubscribe = onSnapshot(
-        q,
-        (snap) => {
-            const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-            callback(list);
-        },
-        (err) => {
-            console.error("[notes] subscription error:", err);
-            callback([]);
-        },
-    );
-    activeSub = { videoId, callback, unsubscribe };
-}
+// --- Активная подписка плеера (одно видео) ---------------------------------
 
-function stopSub() {
+let activeSub = null; // { videoId, cb }
+
+async function loadActive() {
     if (!activeSub) return;
-    try { activeSub.unsubscribe(); } catch (e) { /* ignore */ }
-    activeSub = null;
+    const { videoId, cb } = activeSub;
+    try {
+        const list = await apiGet(`/api/notes?videoId=${encodeURIComponent(videoId)}`);
+        if (activeSub && activeSub.videoId === videoId) cb(list);
+    } catch (e) {
+        console.error("[notes] load error:", e);
+        if (activeSub && activeSub.videoId === videoId) cb([]);
+    }
 }
 
 /**
- * Подписаться на заметки конкретного видео.
- * Колбэк вызывается с массивом заметок (отсортирован по time asc) при каждом изменении.
+ * Подписаться на заметки конкретного видео. Колбэк вызывается со списком
+ * (отсортирован по time asc) сразу и после каждой мутации. При повторном
+ * вызове предыдущая подписка заменяется (одна страница плеера = одна подписка).
  * Возвращает функцию отписки.
- *
- * При повторном вызове предыдущая подписка автоматически отменяется
- * (рассчитано на сценарий "одна страница плеера = одна активная подписка").
  */
 export function subscribeToNotes(videoId, callback) {
-    stopSub();
-    startSub(videoId, callback);
-    return () => stopSub();
+    activeSub = { videoId, cb: callback };
+    loadActive();
+    return () => {
+        if (activeSub && activeSub.videoId === videoId) activeSub = null;
+    };
 }
 
-// --- Индекс заметок: внутреннее ------------------------------------------
+// --- Индекс заметок (значок «есть таймстемпы» на карточках) -----------------
+
+let notesIndex = new Set();
+const indexCallbacks = new Set();
+let indexLoaded = false;
 
 function notifyIndex() {
     for (const cb of indexCallbacks) {
-        try { cb(notesIndex); } catch (e) { console.error("[notes] index callback error:", e); }
+        try {
+            cb(notesIndex);
+        } catch (e) {
+            console.error("[notes] index callback error:", e);
+        }
     }
 }
 
-function startIndexSub() {
-    // Без авторизации — индекс пустой, не подписываемся.
-    if (!currentUid) {
-        notesIndex = new Set();
+async function loadIndex() {
+    try {
+        const ids = await apiGet("/api/notes/index");
+        notesIndex = new Set(ids);
         notifyIndex();
-        return;
-    }
-    if (indexUnsub) return; // уже подписаны
-    // Вся коллекция notes юзера, без where/orderBy — нужны только videoId.
-    const q = query(notesCol(currentUid));
-    indexUnsub = onSnapshot(
-        q,
-        (snap) => {
-            const next = new Set();
-            snap.docs.forEach((d) => {
-                const vid = d.data().videoId;
-                if (vid) next.add(vid);
-            });
-            notesIndex = next;
-            notifyIndex();
-        },
-        (err) => {
-            console.error("[notes] index subscription error:", err);
-            notesIndex = new Set();
-            notifyIndex();
-        },
-    );
-}
-
-function stopIndexSub() {
-    if (indexUnsub) {
-        try { indexUnsub(); } catch (e) { /* ignore */ }
-        indexUnsub = null;
+    } catch (e) {
+        console.error("[notes] index error:", e);
     }
 }
 
-/**
- * Синхронно: есть ли у текущего юзера хотя бы одна заметка к этому видео.
- * Читает индекс из памяти (как isVideoLiked для лайков) — без обращения к базе.
- * До первой загрузки индекса вернет false; значок появится, когда индекс придет
- * (через subscribeToNotesIndex).
- */
+/** Синхронно: есть ли у этого видео хотя бы одна заметка (из индекса в памяти). */
 export function videoHasNotes(videoId) {
     return notesIndex.has(videoId);
 }
 
 /**
- * Подписаться на обновления индекса заметок.
- * Колбэк получает Set videoId (с заметками) — сразу при подписке (текущее
- * состояние) и далее при каждом изменении. Первая подписка запускает
- * onSnapshot на коллекцию notes.
- * Возвращает функцию отписки (снимает слушатель; саму onSnapshot оставляем
- * активной до смены auth — на масштабе одной вкладки это дешевле, чем
- * пере-подписываться при каждом ремонтировании списка).
+ * Подписаться на обновления индекса заметок. Колбэк получает Set videoId сразу
+ * и при каждом изменении. Первая подписка грузит индекс. Возвращает отписку.
  */
 export function subscribeToNotesIndex(callback) {
     indexCallbacks.add(callback);
-    if (!indexUnsub && currentUid) {
-        startIndexSub();
+    callback(notesIndex);
+    if (!indexLoaded) {
+        indexLoaded = true;
+        loadIndex();
     }
-    // Отдать текущее состояние немедленно (как делает subscribeToProfile).
-    try { callback(notesIndex); } catch (e) { /* ignore */ }
-    return () => {
-        indexCallbacks.delete(callback);
-    };
+    return () => indexCallbacks.delete(callback);
+}
+
+// --- После мутаций освежаем плеер и индекс ----------------------------------
+
+async function refreshAfterMutation() {
+    await loadActive();
+    await loadIndex();
 }
 
 function validateText(text) {
@@ -206,46 +115,48 @@ function validateText(text) {
     return trimmed;
 }
 
-/**
- * Создать заметку.
- */
+/** Создать заметку. */
 export async function addNote(videoId, time, text) {
-    const user = getCurrentUser();
-    if (!user) throw new Error("Не авторизованы");
     const cleanText = validateText(text);
     const cleanTime = Number(time);
     if (!isFinite(cleanTime) || cleanTime < 0) {
         throw new Error("Некорректное время");
     }
-    return addDoc(notesCol(user.uid), {
-        videoId,
-        time: cleanTime,
-        text: cleanText,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-    });
+    const fd = new FormData();
+    fd.append("videoId", videoId);
+    fd.append("time", String(cleanTime));
+    fd.append("text", cleanText);
+    const res = await fetch(`${API_BASE_URL}/api/notes`, { method: "POST", body: fd });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка ${res.status}`);
+    }
+    const note = await res.json();
+    await refreshAfterMutation();
+    return note;
 }
 
-/**
- * Обновить текст заметки (время фиксировано — не меняем).
- */
+/** Обновить текст заметки (время не меняем). */
 export async function updateNote(noteId, text) {
-    const user = getCurrentUser();
-    if (!user) throw new Error("Не авторизованы");
     const cleanText = validateText(text);
-    const ref = doc(db, "user_profiles", user.uid, "notes", noteId);
-    return updateDoc(ref, {
-        text: cleanText,
-        updatedAt: serverTimestamp(),
-    });
+    const fd = new FormData();
+    fd.append("text", cleanText);
+    const res = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, { method: "PATCH", body: fd });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка ${res.status}`);
+    }
+    const note = await res.json();
+    await refreshAfterMutation();
+    return note;
 }
 
-/**
- * Удалить заметку.
- */
+/** Удалить заметку. */
 export async function deleteNote(noteId) {
-    const user = getCurrentUser();
-    if (!user) throw new Error("Не авторизованы");
-    const ref = doc(db, "user_profiles", user.uid, "notes", noteId);
-    return deleteDoc(ref);
+    const res = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, { method: "DELETE" });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка ${res.status}`);
+    }
+    await refreshAfterMutation();
 }
