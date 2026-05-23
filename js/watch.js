@@ -324,8 +324,10 @@ function renderNotes() {
 }
 
 // Желтые точки на таймлайне в позициях заметок.
-// При hover на точку подсвечивается соответствующая заметка в списке —
-// чтобы сразу было видно, какая заметка стоит на этом моменте видео.
+// Клик по точке перематывает видео на момент заметки (тот же seekTo,
+// что и кликабельный таймстемп в списке). При hover на точку подсвечивается
+// соответствующая заметка в списке — чтобы сразу было видно, какая заметка
+// стоит на этом моменте видео.
 // Пере-рендериваются при изменении списка и при loadedmetadata (когда становится
 // известна duration). Обработчики каждый раз вешаются на новые элементы — это ок,
 // потому что точки тоже создаются заново.
@@ -348,6 +350,7 @@ function renderNoteMarks() {
         dot.style.left = `${(t / duration) * 100}%`;
         if (note.text) dot.title = note.text;
 
+        dot.addEventListener("click", () => seekTo(t));
         dot.addEventListener("mouseenter", () => highlightNoteInList(note.id, true));
         dot.addEventListener("mouseleave", () => highlightNoteInList(note.id, false));
 

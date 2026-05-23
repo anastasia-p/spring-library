@@ -12,6 +12,7 @@ import {
 } from "./firebase.js";
 import { openVideoEditor } from "./editor.js";
 import { openFolderEditor } from "./folder-editor.js";
+import { videoHasNotes, subscribeToNotesIndex } from "./notes.js";
 
 const TRASH_ICON_SVG = `
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -44,6 +45,18 @@ const EYE_OFF_ICON_SVG = `
 const HEART_ICON_SVG = `
 <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path>
+</svg>`;
+
+// Значок "есть таймстемпы" — список строк с маркерами слева (ассоциация с
+// заметками к моментам видео). Декоративный, не интерактивный.
+const NOTES_ICON_SVG = `
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <line x1="9" y1="6" x2="20" y2="6"></line>
+    <line x1="9" y1="12" x2="20" y2="12"></line>
+    <line x1="9" y1="18" x2="20" y2="18"></line>
+    <circle cx="4" cy="6" r="1"></circle>
+    <circle cx="4" cy="12" r="1"></circle>
+    <circle cx="4" cy="18" r="1"></circle>
 </svg>`;
 
 // Иконка папки — flat-стиль, лимонно-желтый из эмблемы школы (приглушенный),
@@ -126,6 +139,7 @@ export function createVideoCard(video, { onDelete, onSaved, onHiddenChanged } = 
 
     body.appendChild(footer);
     card.appendChild(body);
+    card.appendChild(createNotesBadge(video.id));
     card.appendChild(createLikeButton("video", video.id));
 
     return card;
@@ -173,6 +187,37 @@ export function createFolderCard(folderName, videoCount, { onDelete, onRenamed, 
 
     return card;
 }
+
+// --- Значок "есть таймстемпы" ---------------------------------------------
+// Не кнопка, а индикатор: показываем, если у текущего юзера есть хотя бы одна
+// заметка к этому видео (videoHasNotes — синхронно из индекса в памяти).
+// Клик по значку НЕ перехватываем — он пробрасывается на карточку и открывает
+// видео, как клик по любому ее месту. pointer-events оставляем включенными,
+// иначе native title-tooltip не показывается (см. урок про pointer-events:none).
+// Значение видимости держим классом --visible, чтобы глобальная подписка ниже
+// могла показывать/прятать значок при изменении заметок без пересоздания карточки.
+
+function createNotesBadge(videoId) {
+    const badge = document.createElement("div");
+    badge.className = videoHasNotes(videoId)
+        ? "card__notes card__notes--visible"
+        : "card__notes";
+    badge.innerHTML = NOTES_ICON_SVG;
+    badge.title = "Есть таймстемпы";
+    badge.setAttribute("aria-label", "В этом видео есть ваши таймстемпы");
+    badge.dataset.notesId = videoId;
+    return badge;
+}
+
+// Единая глобальная подписка на индекс заметок. При его изменении проходим по
+// всем значкам на странице и переключаем видимость. Тем же приемом, что лайки.
+subscribeToNotesIndex(() => {
+    document.querySelectorAll(".card__notes").forEach((badge) => {
+        const videoId = badge.dataset.notesId;
+        if (!videoId) return;
+        badge.classList.toggle("card__notes--visible", videoHasNotes(videoId));
+    });
+});
 
 // --- Лайки ----------------------------------------------------------------
 // Кнопка сердечка. Кликает — toggle через firebase.js, UI обновляется

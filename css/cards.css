@@ -110,6 +110,7 @@
     color: var(--text-muted);
     margin-bottom: 10px;
     line-height: 1.4;
+    white-space: pre-line; /* переносы строк из описания (textContent с \n) сохраняются на карточке */
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -197,6 +198,39 @@
 .card__hide svg {
     width: 18px;
     height: 18px;
+    display: block;
+}
+
+/* --- Значок "есть таймстемпы" ---
+ * Слева от сердечка (right: 44px = 10 right сердечка + 28 ширина + 6 зазор).
+ * Та же круглая подложка, что у сердечка, чтобы читался на превью любого цвета.
+ * Скрыт по умолчанию; показывается классом --visible (управляется из ui.js
+ * по индексу заметок). Не интерактивный: клик проходит на карточку. */
+
+.card__notes {
+    position: absolute;
+    top: 10px;
+    right: 44px;
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    color: var(--text-hint);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.card__notes--visible {
+    display: flex;
+}
+
+.card__notes svg {
+    width: 15px;
+    height: 15px;
     display: block;
 }
 

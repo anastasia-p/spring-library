@@ -11,6 +11,14 @@
 //   text: string (1..1000 символов)
 //   createdAt: serverTimestamp
 //   updatedAt: serverTimestamp
+//
+// Две независимые подписки:
+//   1) activeSub  — заметки ОДНОГО видео (плеер). Одна на страницу, пере-создается
+//      на каждый subscribeToNotes. Сортировка по time asc.
+//   2) indexSub   — индекс "в каких видео вообще есть заметки" (для значка на
+//      карточках в списке). Подписка на ВСЮ коллекцию notes юзера, без where.
+//      Держим Set videoId в памяти; videoHasNotes() — синхронный геттер.
+//      Паттерн зеркалит лайки (firebase.js: профиль в памяти + isVideoLiked).
 
 import {
     collection,
@@ -31,18 +39,34 @@ export const MAX_NOTE_TEXT_LENGTH = 1000;
 // Текущий uid (актуализируется через subscribeToAuth)
 let currentUid = null;
 
-// Активная подписка: { videoId, callback, unsubscribe }
+// Активная подписка плеера: { videoId, callback, unsubscribe }
 let activeSub = null;
+
+// --- Индекс заметок (для значка на карточках) ----------------------------
+// notesIndex — множество videoId, у которых есть хотя бы одна заметка.
+// indexUnsub — отписка от onSnapshot всей коллекции (null = не подписаны).
+// indexCallbacks — слушатели обновления индекса (ui.js перерисовывает значки).
+let notesIndex = new Set();
+let indexUnsub = null;
+const indexCallbacks = new Set();
 
 subscribeToAuth((user) => {
     const newUid = user?.uid || null;
     if (newUid === currentUid) return;
     currentUid = newUid;
-    // Если была активная подписка — пере-подписываемся с новым uid
+    // Подписка плеера: пере-подписываемся с новым uid
     if (activeSub) {
         const { videoId, callback } = activeSub;
         stopSub();
         startSub(videoId, callback);
+    }
+    // Индекс заметок: пере-подписываемся с новым uid (или чистим при выходе),
+    // только если кто-то на него подписан.
+    stopIndexSub();
+    notesIndex = new Set();
+    notifyIndex();
+    if (indexCallbacks.size > 0) {
+        startIndexSub();
     }
 });
 
@@ -94,6 +118,81 @@ export function subscribeToNotes(videoId, callback) {
     stopSub();
     startSub(videoId, callback);
     return () => stopSub();
+}
+
+// --- Индекс заметок: внутреннее ------------------------------------------
+
+function notifyIndex() {
+    for (const cb of indexCallbacks) {
+        try { cb(notesIndex); } catch (e) { console.error("[notes] index callback error:", e); }
+    }
+}
+
+function startIndexSub() {
+    // Без авторизации — индекс пустой, не подписываемся.
+    if (!currentUid) {
+        notesIndex = new Set();
+        notifyIndex();
+        return;
+    }
+    if (indexUnsub) return; // уже подписаны
+    // Вся коллекция notes юзера, без where/orderBy — нужны только videoId.
+    const q = query(notesCol(currentUid));
+    indexUnsub = onSnapshot(
+        q,
+        (snap) => {
+            const next = new Set();
+            snap.docs.forEach((d) => {
+                const vid = d.data().videoId;
+                if (vid) next.add(vid);
+            });
+            notesIndex = next;
+            notifyIndex();
+        },
+        (err) => {
+            console.error("[notes] index subscription error:", err);
+            notesIndex = new Set();
+            notifyIndex();
+        },
+    );
+}
+
+function stopIndexSub() {
+    if (indexUnsub) {
+        try { indexUnsub(); } catch (e) { /* ignore */ }
+        indexUnsub = null;
+    }
+}
+
+/**
+ * Синхронно: есть ли у текущего юзера хотя бы одна заметка к этому видео.
+ * Читает индекс из памяти (как isVideoLiked для лайков) — без обращения к базе.
+ * До первой загрузки индекса вернет false; значок появится, когда индекс придет
+ * (через subscribeToNotesIndex).
+ */
+export function videoHasNotes(videoId) {
+    return notesIndex.has(videoId);
+}
+
+/**
+ * Подписаться на обновления индекса заметок.
+ * Колбэк получает Set videoId (с заметками) — сразу при подписке (текущее
+ * состояние) и далее при каждом изменении. Первая подписка запускает
+ * onSnapshot на коллекцию notes.
+ * Возвращает функцию отписки (снимает слушатель; саму onSnapshot оставляем
+ * активной до смены auth — на масштабе одной вкладки это дешевле, чем
+ * пере-подписываться при каждом ремонтировании списка).
+ */
+export function subscribeToNotesIndex(callback) {
+    indexCallbacks.add(callback);
+    if (!indexUnsub && currentUid) {
+        startIndexSub();
+    }
+    // Отдать текущее состояние немедленно (как делает subscribeToProfile).
+    try { callback(notesIndex); } catch (e) { /* ignore */ }
+    return () => {
+        indexCallbacks.delete(callback);
+    };
 }
 
 function validateText(text) {

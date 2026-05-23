@@ -229,7 +229,8 @@
         /* Отметки заметок на таймлайне. Лежат в том же wrap что и A/B-метки,
            под ними по z-index (A/B всегда виднее как активный контрол).
            Цвет — лимонно-желтый из иконки папки, для отличия от голубого A/B-градиента.
-           pointer-events: auto — чтобы ловить hover и показывать связь с заметкой в списке.
+           pointer-events: auto — точка ловит hover (подсветка заметки в списке)
+           и клик (перемотка на момент заметки через seekTo).
            Drag по range в зоне точки не сработает — компромисс за интерактивность точек. */
         .note-mark {
             position: absolute;
@@ -240,7 +241,7 @@
             border-radius: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
-            cursor: default;
+            cursor: pointer;
             transition: transform 0.12s ease;
         }
         .note-mark:hover {
