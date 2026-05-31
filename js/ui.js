@@ -29,18 +29,6 @@ const EDIT_ICON_SVG = `
     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
 </svg>`;
 
-const EYE_ICON_SVG = `
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-    <circle cx="12" cy="12" r="3"></circle>
-</svg>`;
-
-const EYE_OFF_ICON_SVG = `
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-    <line x1="1" y1="1" x2="23" y2="23"></line>
-</svg>`;
-
 // Сердечко — одна SVG, fill переключается через CSS на currentColor при .card__like--active
 const HEART_ICON_SVG = `
 <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -96,7 +84,7 @@ export function createFolderIcon() {
  * @param {function} options.onSaved  - callback после успешного редактирования (для рефреша списка)
  * @returns {HTMLElement}
  */
-export function createVideoCard(video, { onDelete, onSaved, onHiddenChanged } = {}) {
+export function createVideoCard(video, { onDelete, onSaved } = {}) {
     const card = document.createElement("div");
     card.className = "card";
     card.addEventListener("click", () => {
@@ -131,7 +119,6 @@ export function createVideoCard(video, { onDelete, onSaved, onHiddenChanged } = 
     if (isAdmin()) {
         const actions = document.createElement("div");
         actions.className = "card__actions";
-        actions.appendChild(createVideoHideButton(video, onHiddenChanged));
         actions.appendChild(createEditButton(video, onSaved));
         actions.appendChild(createDeleteButton(video, onDelete));
         footer.appendChild(actions);
@@ -148,7 +135,7 @@ export function createVideoCard(video, { onDelete, onSaved, onHiddenChanged } = 
 /**
  * Карточка папки внутри раздела (например, папка видео).
  * Сердечко в правом верхнем углу карточки.
- * У админа — иконки скрытия/редактирования/удаления в футере.
+ * У админа — иконки редактирования/удаления в футере.
  * @param {string} folderName
  * @param {number} videoCount
  * @param {object} options
@@ -156,7 +143,7 @@ export function createVideoCard(video, { onDelete, onSaved, onHiddenChanged } = 
  * @param {function} options.onRenamed - callback после успешного переименования
  * @param {string[]} options.existingFolders - имена всех папок (для проверки коллизии в editor)
  */
-export function createFolderCard(folderName, videoCount, { onDelete, onRenamed, existingFolders, allHidden, hasHidden, onHiddenChanged } = {}) {
+export function createFolderCard(folderName, videoCount, { onDelete, onRenamed, existingFolders } = {}) {
     const card = document.createElement("div");
     card.className = "card card--folder";
     card.addEventListener("click", () => {
@@ -177,7 +164,6 @@ export function createFolderCard(folderName, videoCount, { onDelete, onRenamed, 
     if (isAdmin()) {
         const actions = document.createElement("div");
         actions.className = "card__actions";
-        actions.appendChild(createFolderHideButton(folderName, !!allHidden, !!hasHidden, onHiddenChanged));
         actions.appendChild(createFolderEditButton(folderName, videoCount, onRenamed, existingFolders));
         actions.appendChild(createFolderDeleteButton(folderName, videoCount, onDelete));
         card.appendChild(actions);
@@ -371,52 +357,6 @@ function createFolderDeleteButton(folderName, videoCount, onDelete) {
             if (onDelete) onDelete();
         } catch (err) {
             alert(`Ошибка удаления: ${err.message}`);
-            btn.disabled = false;
-        }
-    });
-    return btn;
-}
-
-function createVideoHideButton(video, onHiddenChanged) {
-    const isHidden = !!video.hidden;
-    const btn = document.createElement("button");
-    btn.className = isHidden ? "card__hide card__hide--has-hidden" : "card__hide";
-    btn.innerHTML = isHidden ? EYE_OFF_ICON_SVG : EYE_ICON_SVG;
-    btn.title = isHidden ? "Показать видео" : "Скрыть видео";
-    btn.setAttribute("aria-label", btn.title);
-    btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        btn.disabled = true;
-        try {
-            await videosApi.setHidden(video.id, !isHidden);
-            if (onHiddenChanged) onHiddenChanged();
-        } catch (err) {
-            alert(`Ошибка: ${err.message}`);
-            btn.disabled = false;
-        }
-    });
-    return btn;
-}
-
-function createFolderHideButton(folderName, allHidden, hasHidden, onHiddenChanged) {
-    // Три состояния:
-    //   1) ничего не скрыто:    открытый глаз, без подложки
-    //   2) что-то скрыто (mix): открытый глаз, серая подложка
-    //   3) все скрыто:          перечеркнутый глаз, серая подложка
-    // Подложка управляется классом has-hidden, иконка — отдельной логикой.
-    const btn = document.createElement("button");
-    btn.className = hasHidden ? "card__hide card__hide--has-hidden" : "card__hide";
-    btn.innerHTML = allHidden ? EYE_OFF_ICON_SVG : EYE_ICON_SVG;
-    btn.title = allHidden ? "Показать всю папку" : "Скрыть всю папку";
-    btn.setAttribute("aria-label", btn.title);
-    btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        btn.disabled = true;
-        try {
-            await videosApi.setFolderHidden(folderName, !allHidden);
-            if (onHiddenChanged) onHiddenChanged();
-        } catch (err) {
-            alert(`Ошибка: ${err.message}`);
             btn.disabled = false;
         }
     });

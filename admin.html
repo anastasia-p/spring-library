@@ -4,13 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spring Library — админ</title>
-    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/fonts.css">
     <link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/modal.css">
-    <link rel="stylesheet" href="css/auth.css">
     <link rel="stylesheet" href="css/bottom-nav.css">
     <script type="module" src="js/header.js"></script>
-    <script type="module" src="js/auth-overlay.js"></script>
     <script type="module" src="js/bottom-nav.js"></script>
     <style>
         .page-content {
@@ -293,9 +291,8 @@
             <div class="page-subtitle">Добавление контента</div>
         </div>
 
-        <!-- Login-секция удалена — авторизация через общий auth-overlay -->
-
-        <!-- Не админ — сообщение со ссылкой назад -->
+        <!-- Не админ — сообщение со ссылкой назад (авторизации больше нет;
+             секцию admin.js раскрывает сам, эту прячет) -->
         <section id="not-admin-section" hidden>
             <div class="stub">
                 <div class="stub__icon">🔒</div>

@@ -1,7 +1,7 @@
 // Главная страница — табы Видео / Книги / Фильмы.
 // URL-hash отвечает за выбранный таб (#videos / #books / #films).
 
-import { subscribeToAuth, isAdmin, subscribeToProfile, getUserProfile } from "./firebase.js";
+import { subscribeToAuth, subscribeToProfile, getUserProfile } from "./firebase.js";
 import { videosApi } from "./data.js";
 import { createVideoCard, createFolderCard } from "./ui.js";
 import {
@@ -183,12 +183,7 @@ function renderVideos(videos) {
     // Снимаем позицию скролла ДО изменения DOM (innerHTML="" и appendChild сбрасывают scroll).
     const savedScroll = window.scrollY;
 
-    const totalHidden = videos.reduce((n, v) => n + (v.hidden ? 1 : 0), 0);
-    let totalText = `${videos.length} видео`;
-    if (isAdmin() && totalHidden > 0) {
-        totalText += ` (из них скрыто ${totalHidden})`;
-    }
-    videosTotalEl.textContent = totalText;
+    videosTotalEl.textContent = `${videos.length} видео`;
     videosTotalEl.hidden = false;
 
     const folderMap = new Map();
@@ -197,11 +192,9 @@ function renderVideos(videos) {
     for (const video of videos) {
         if (video.folder) {
             if (!folderMap.has(video.folder)) {
-                folderMap.set(video.folder, { count: 0, hiddenCount: 0 });
+                folderMap.set(video.folder, { count: 0 });
             }
-            const f = folderMap.get(video.folder);
-            f.count += 1;
-            if (video.hidden) f.hiddenCount += 1;
+            folderMap.get(video.folder).count += 1;
         } else {
             standaloneVideos.push(video);
         }
@@ -218,13 +211,11 @@ function renderVideos(videos) {
     const allFolderNames = [...folderMap.keys()].sort((a, b) => a.localeCompare(b, "ru"));
     for (const name of folderNames) {
         const info = folderMap.get(name);
-        // Колбэки больше не передаем — onSnapshot сам обновит UI после
-        // любых админ-операций. existingFolders нужен только для проверки
+        // Колбэки не передаем — после любой мутации refreshVideos() сам
+        // перерисует список. existingFolders нужен только для проверки
         // коллизий имен при переименовании в редакторе.
         foldersList.appendChild(createFolderCard(name, info.count, {
             existingFolders: allFolderNames,
-            allHidden: info.count > 0 && info.hiddenCount === info.count,
-            hasHidden: info.hiddenCount > 0,
         }));
     }
     foldersSection.hidden = folderNames.length === 0;

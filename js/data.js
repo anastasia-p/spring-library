@@ -3,24 +3,16 @@
 // Раньше тут жил клиентский Firestore SDK. Теперь — обычный fetch в локальный
 // бэкенд. Чтобы не трогать потребителей (index.js, folder.js), сохранен
 // «наблюдаемый» интерфейс: subscribeAll/subscribeInFolder регистрируют слушателя,
-// а любая мутация (delete/update/upload/hidden/folder ops) дергает refreshVideos()
+// а любая мутация (delete/update/upload/folder ops) дергает refreshVideos()
 // — перезапрос всех видео и оповещение слушателей. Для одного пользователя на
 // одной вкладке это полностью заменяет realtime от onSnapshot.
 
 import { API_BASE_URL } from "./config.js";
-import { isAdmin } from "./firebase.js";
 
 function sortByTitle(a, b) {
     const ta = (a.title || "").trim();
     const tb = (b.title || "").trim();
     return ta.localeCompare(tb, "ru", { sensitivity: "base", numeric: true });
-}
-
-// Обычный пользователь не видит hidden-видео. isAdmin() сейчас всегда true
-// (один пользователь), так что фильтр фактически пропускает все.
-function filterVisible(list) {
-    if (isAdmin()) return list;
-    return list.filter((v) => !v.hidden);
 }
 
 async function apiGet(path) {
@@ -51,7 +43,7 @@ function notifyVideoSub(sub) {
     const scoped = sub.folder == null
         ? videosCache
         : videosCache.filter((v) => v.folder === sub.folder);
-    sub.cb(filterVisible(scoped).slice().sort(sortByTitle));
+    sub.cb(scoped.slice().sort(sortByTitle));
 }
 
 function notifyAllVideoSubs() {
@@ -70,7 +62,7 @@ export const videosApi = {
 
     async fetchAll() {
         const list = await apiGet("/api/videos");
-        return filterVisible(list).slice().sort(sortByTitle);
+        return list.slice().sort(sortByTitle);
     },
 
     /**
@@ -95,7 +87,7 @@ export const videosApi = {
 
     async fetchInFolder(folderName) {
         const list = await apiGet(`/api/videos?folder=${encodeURIComponent(folderName)}`);
-        return filterVisible(list).slice().sort(sortByTitle);
+        return list.slice().sort(sortByTitle);
     },
 
     /**
@@ -282,24 +274,6 @@ export const videosApi = {
         fd.append("new_name", newName);
         const result = await apiSend(
             `/api/folders/${encodeURIComponent(folderName)}`, "PATCH", fd
-        );
-        await refreshVideos();
-        return result;
-    },
-
-    async setHidden(id, hidden) {
-        const fd = new FormData();
-        fd.append("hidden", String(hidden));
-        const result = await apiSend(`/api/videos/${encodeURIComponent(id)}/hidden`, "PATCH", fd);
-        await refreshVideos();
-        return result;
-    },
-
-    async setFolderHidden(folderName, hidden) {
-        const fd = new FormData();
-        fd.append("hidden", String(hidden));
-        const result = await apiSend(
-            `/api/folders/${encodeURIComponent(folderName)}/hidden`, "PATCH", fd
         );
         await refreshVideos();
         return result;

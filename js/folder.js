@@ -133,8 +133,8 @@ function renderList(videos) {
     );
     listEl.innerHTML = "";
     for (const video of sorted) {
-        // Колбэки onDelete/onSaved/onHiddenChanged больше не передаем —
-        // onSnapshot сам обновит UI после любого изменения в Firestore.
+        // Колбэки onDelete/onSaved не передаем — после любой мутации
+        // refreshVideos() сам перерисует список.
         listEl.appendChild(createVideoCard(video));
     }
 

@@ -151,8 +151,7 @@
 }
 
 .card__delete,
-.card__edit,
-.card__hide {
+.card__edit {
     background: none;
     border: none;
     padding: 6px;
@@ -177,25 +176,14 @@
     background: var(--red-light);
 }
 
-.card__hide:hover {
-    color: var(--green);
-    background: var(--accent-light);
-}
-
-.card__hide--has-hidden {
-    background: var(--border);
-}
-
 .card__delete:disabled,
-.card__edit:disabled,
-.card__hide:disabled {
+.card__edit:disabled {
     opacity: 0.4;
     cursor: not-allowed;
 }
 
 .card__delete svg,
-.card__edit svg,
-.card__hide svg {
+.card__edit svg {
     width: 18px;
     height: 18px;
     display: block;
